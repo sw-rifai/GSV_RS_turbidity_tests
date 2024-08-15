@@ -1,0 +1,282 @@
+---
+title: "EDA_NDTI_MYD09GA"
+author: "Sami Rifai"
+project:
+  execute-dir: project
+format: html
+editor: visual
+execute:
+  cache: true
+  echo: false
+  output: true
+---
+
+## 
+
+```{r echo=F, output=F}
+pacman::p_load(lubridate, terra, tidyverse, data.table,
+               mgcv, mgcViz,sf)
+# getwd()
+# setwd(here::here())
+# getwd()
+```
+
+## Adelaide Metro. Coastline zones
+
+```{r}
+oz_poly <- rnaturalearth::ne_countries(country = "Australia",
+                                       returnclass = "sf", 
+                                       scale = 'large')
+amc <- sf::read_sf("data/AMC/AnalysisExtentMask_GDA94z54.shp")
+amc <- sf::st_transform(amc, sf::st_crs(oz_poly))
+amc <- amc %>% mutate(
+  fzone = factor(zone, ordered = T,
+         levels = c("North Zone","Central Zone","South Zone"),
+         labels = c("North Zone","Central Zone","South Zone")))
+
+vec_lims <- st_bbox(st_buffer(amc,10000))
+
+ggplot()+
+  geom_sf(data = oz_poly)+ 
+  geom_sf(data = amc, aes(fill = fzone)) +
+  coord_sf(xlim = vec_lims[c("xmin","xmax")],
+           ylim = vec_lims[c("ymin","ymax")], 
+           crs = st_crs(amc), 
+           ndiscr = 3,
+           lims_method = "box") + 
+  scale_x_continuous(breaks = seq(
+    from = round(vec_lims["xmin"],digits=1), 
+    to = round(vec_lims['xmax'],digits=1), 
+    by = 0.3
+  )) +
+  scale_fill_viridis_d(option = "C", end = 0.9) + 
+  labs(fill = "Zone") + 
+  theme(panel.background = element_rect(fill='lightblue'))
+
+```
+
+MODIS Aqua NDTI data was extracted from 2003 - 2021. There is an QA band issue that needs debugging with the imagery from 2022+.
+
+Here we summarize all NDTI values for each zone by the median, the SD, and the number of observations.
+
+```{r echo=F, warning=F, output=F}
+# Load data, add time components
+dat <- fread("data/gee_SAWater_turbidity/MYD09GA_NDTI_medianCountSD_2003-01-01_2021-12-31.csv") %>% 
+  rename(ndti = median) %>% 
+  .[order(zone,date)] %>% 
+  select(-`.geo`) %>% 
+  mutate(year=year(date),
+         month=month(date), 
+         fzone = factor(zone, ordered = T,
+         levels = c("North Zone","Central Zone","South Zone"),    
+         labels = c("North Zone","Central Zone","South Zone"))) %>% 
+  .[]
+
+# calculate rolling metrics
+dat[,`:=`(ndti_4w = frollmean(ndti, n=4, fill=NA, align='right'))]
+dat[,`:=`(ndti_12w = frollmean(ndti, n=12, fill=NA, align='right'))]
+dat[,`:=`(ndti_52w = frollmean(ndti, n=52, fill=NA, align='right'))]
+
+```
+
+## Observations
+
+```{r}
+dat %>% 
+  ggplot(aes(count, fill = fzone))+
+  geom_density(alpha = 0.7,
+    color = NA) + 
+  labs(x= "Pixel Count",
+    fill = "Zone") + 
+  scale_fill_viridis_d(option = "C", end = 0.9) +
+  coord_cartesian(expand = F) + 
+  theme_linedraw()
+```
+
+## histogram of ndti by zone
+
+```{r}
+dat %>% 
+  ggplot(aes(ndti, fill = fzone))+
+  geom_density(alpha = 0.7,
+    color = NA) + 
+  labs(x= "NDTI",
+    fill = "Zone") + 
+  scale_fill_viridis_d(option = "C", end = 0.9) +
+  coord_cartesian(expand = F) + 
+  theme_linedraw()
+```
+
+The Southern Zone has notably higher NDTI (more turbid). ***Is this plausible?***
+
+## Standard Deviation of NDTI within zone
+
+```{r}
+dat %>% 
+  ggplot(aes(stdDev, fill = fzone))+
+  geom_density(alpha = 0.7,
+    color = NA) + 
+  labs(x= "NDTI",
+    fill = "Zone") + 
+  scale_fill_viridis_d(option = "C", end = 0.9) +
+  coord_cartesian(expand = F) + 
+  theme_linedraw()
+```
+
+The Central zone seems slightly more variable than the others.
+
+## zonal median by week
+
+```{r}
+dat[date %between% c(ymd("2016-01-01"),ymd("2018-12-31"))] %>% 
+  ggplot(aes(date, ndti, color=count))+
+  geom_hline(aes(yintercept = 0),
+    color = 'grey70')+ 
+  geom_ribbon(aes(ymin = ndti - stdDev, 
+                    ymax = ndti + stdDev),
+              alpha = 0.25, 
+              color = NA) + 
+  geom_line(aes(color = NULL)) + 
+  geom_point(size = 1) + 
+  scale_color_viridis_c() +
+  labs(x = NULL, y="NDTI",
+    color = "Pixel\nCount") + 
+  coord_cartesian(expand = F) + 
+  facet_wrap(~zone, ncol = 1)+
+  theme_linedraw()+
+  theme(panel.grid = element_blank())
+```
+
+# Modeling the seasonal and yearly components
+
+## start with seasonal component and zone
+
+```{r}
+m1 <- gam(ndti ~ s(month, by = fzone, 
+                   bs=c('cc','fs')), 
+          data=dat, 
+          select = T)
+getViz(m1) %>% 
+  plot() %>% 
+  print(pages=1)
+
+```
+
+## Cyclic month and zone as a factor
+
+```{r}
+m2 <- gam(ndti ~ fzone + 
+                   s(month, 
+                   bs=c('cc')), 
+          data=dat, 
+          select = T)
+
+bbmle::AICctab(m1,m2)
+```
+
+Lower AIC on m2 suggests that each zone does not need its own monthly smoooth.
+
+## Add year component0
+
+```{r}
+m3 <- gam(ndti ~ year + 
+            fzone +  
+                   s(month,  
+                   bs=c('cc')), 
+          data=dat, 
+          select = T)
+bbmle::AICctab(m2, m3)
+summary(m3)
+getViz(m3) %>% plot(allTerms = T) %>% print(pages = 1)
+## Relative to zone differences, the linear year effect is extremely weak
+
+```
+
+## Examine year as a nonlinear effect
+
+```{r}
+m4 <- gam(ndti ~ 
+            s(year) + 
+            fzone +
+            s(month,
+            bs=c('cc')), 
+          data=dat,
+          select = T)
+getViz(m4) %>% plot(allTerms = T) %>% print(pages = 1)
+summary(m4)
+bbmle::AICctab(m3, m4)
+## year is better modeled as a nonlinear effect, than a linear effect
+
+```
+
+## Examine nonlinear year effect by site
+
+```{r}
+m5 <- gam(ndti ~ 
+            s(year, fzone, bs='fs') + 
+            s(month,
+              bs=c('cc')), 
+          data=dat,
+          select = T)
+summary(m5)
+```
+
+```{r}
+getViz(m5) %>% plot(allTerms = T) %>% print(pages = 1)
+```
+
+```{r}
+bbmle::AICctab(m4, m5)
+```
+
+Nonlinear year by site is better, but the AIC difference is very small. So we will drop the year x zone interaction.
+
+## Examine number of knots on year
+
+We start with an equivalent number of knots per year, and will not aggressively penalize the 'year' smooth.
+
+```{r}
+kn <- dat$year %>% unique %>% length
+m6 <- gam(ndti ~ 
+            s(year, k = kn) + 
+            fzone +
+            s(month,
+              bs=c('cc')), 
+          data=dat,
+          select = F) # reduces penalization on smooths
+summary(m6)
+getViz(m6) %>% plot(select = 1) %>% print(pages = 1)
+
+```
+
+```{r}
+bbmle::AICctab(m5, m6)
+## 
+
+```
+
+Allowing the year effect to vary by year improves the fit.
+
+## Try a penalized year effect
+
+This is to help determine how real these year to year peaks are.
+
+```{r}
+m7 <- gam(ndti ~ 
+            s(year, k = kn, bs='ts') + 
+            fzone +
+            s(month,
+              bs=c('cc')), 
+          data=dat,
+          select = T)
+summary(m7)
+getViz(m7) %>% plot(select = 1) %>% print(pages = 1)
+```
+
+```{r}
+bbmle::AICctab(m6, m7)
+## 
+
+```
+
+The wiggly model is slightly better than the smoother effect.

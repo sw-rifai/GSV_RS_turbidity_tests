@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.3.353">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Sami Rifai">
+
+<title>EDA_NDTI_MYD09GA</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="eda_ndti_myd09ga_files/libs/clipboard/clipboard.min.js"></script>
+<script src="eda_ndti_myd09ga_files/libs/quarto-html/quarto.js"></script>
+<script src="eda_ndti_myd09ga_files/libs/quarto-html/popper.min.js"></script>
+<script src="eda_ndti_myd09ga_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="eda_ndti_myd09ga_files/libs/quarto-html/anchor.min.js"></script>
+<link href="eda_ndti_myd09ga_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="eda_ndti_myd09ga_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="eda_ndti_myd09ga_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="eda_ndti_myd09ga_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="eda_ndti_myd09ga_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">EDA_NDTI_MYD09GA</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Sami Rifai </p>
+          </div>
+  </div>
+    
+  
+    
+  </div>
+  
+
+</header>
+
+<section id="section" class="level2">
+<h2 class="anchored" data-anchor-id="section"></h2>
+</section>
+<section id="adelaide-metro.-coastline-zones" class="level2">
+<h2 class="anchored" data-anchor-id="adelaide-metro.-coastline-zones">Adelaide Metro. Coastline zones</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-2_055822fb118226a051c3995182cf7b56">
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-2-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+<p>MODIS Aqua NDTI data was extracted from 2003 - 2021. There is an QA band issue that needs debugging with the imagery from 2022+.</p>
+<p>Here we summarize all NDTI values for each zone by the median, the SD, and the number of observations.</p>
+</section>
+<section id="observations" class="level2">
+<h2 class="anchored" data-anchor-id="observations">Observations</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-4_ba9d32e00a47c492326712db1a1be9fb">
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-4-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+</section>
+<section id="histogram-of-ndti-by-zone" class="level2">
+<h2 class="anchored" data-anchor-id="histogram-of-ndti-by-zone">histogram of ndti by zone</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-5_9480320e0db76183bad7162e36bce654">
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Removed 1 rows containing non-finite values (`stat_density()`).</code></pre>
+</div>
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-5-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+<p>The Southern Zone has notably higher NDTI (more turbid). <strong><em>Is this plausible?</em></strong></p>
+</section>
+<section id="standard-deviation-of-ndti-within-zone" class="level2">
+<h2 class="anchored" data-anchor-id="standard-deviation-of-ndti-within-zone">Standard Deviation of NDTI within zone</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-6_f6bdd1bb901285bf1e8bc23be81e9823">
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Removed 1 rows containing non-finite values (`stat_density()`).</code></pre>
+</div>
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-6-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+<p>The Central zone seems slightly more variable than the others.</p>
+</section>
+<section id="zonal-median-by-week" class="level2">
+<h2 class="anchored" data-anchor-id="zonal-median-by-week">zonal median by week</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-7_76e443ea165769b03a74c8f4f4ad4468">
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-7-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+</section>
+<section id="modeling-the-seasonal-and-yearly-components" class="level1">
+<h1>Modeling the seasonal and yearly components</h1>
+<section id="start-with-seasonal-component-and-zone" class="level2">
+<h2 class="anchored" data-anchor-id="start-with-seasonal-component-and-zone">start with seasonal component and zone</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-8_71bff13dfae9674cd0abcc50ba437fdc">
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-8-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+</section>
+<section id="cyclic-month-and-zone-as-a-factor" class="level2">
+<h2 class="anchored" data-anchor-id="cyclic-month-and-zone-as-a-factor">Cyclic month and zone as a factor</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-9_684d732a8e672000b77e51ae8d8f31cf">
+<div class="cell-output cell-output-stdout">
+<pre><code>   dAICc df  
+m2   0.0 10.9
+m1 991.6 13.7</code></pre>
+</div>
+</div>
+<p>Lower AIC on m2 suggests that each zone does not need its own monthly smoooth.</p>
+</section>
+<section id="add-year-component0" class="level2">
+<h2 class="anchored" data-anchor-id="add-year-component0">Add year component0</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-10_58be1650ba8ffd9f5f78ed9935fb0d48">
+<div class="cell-output cell-output-stdout">
+<pre><code>   dAICc df  
+m3  0.0  11.9
+m2 25.0  10.9</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Family: gaussian 
+Link function: identity 
+
+Formula:
+ndti ~ year + fzone + s(month, bs = c("cc"))
+
+Parametric coefficients:
+              Estimate Std. Error t value Pr(&gt;|t|)    
+(Intercept) -5.3384204  0.9524882  -5.605 2.28e-08 ***
+year         0.0024632  0.0004734   5.203 2.09e-07 ***
+fzone.L      0.1378612  0.0044917  30.692  &lt; 2e-16 ***
+fzone.Q      0.0334859  0.0044909   7.456 1.16e-13 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Approximate significance of smooth terms:
+          edf Ref.df     F p-value    
+s(month) 6.91      8 42.66  &lt;2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+R-sq.(adj) =  0.316   Deviance explained = 31.8%
+GCV = 0.019997  Scale est. = 0.019923  n = 2963</code></pre>
+</div>
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-10-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+</section>
+<section id="examine-year-as-a-nonlinear-effect" class="level2">
+<h2 class="anchored" data-anchor-id="examine-year-as-a-nonlinear-effect">Examine year as a nonlinear effect</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-11_dc5d9f97fcd45cab3afed782e62f57f9">
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-11-1.png" class="img-fluid" width="672"></p>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Family: gaussian 
+Link function: identity 
+
+Formula:
+ndti ~ s(year) + fzone + s(month, bs = c("cc"))
+
+Parametric coefficients:
+             Estimate Std. Error  t value Pr(&gt;|t|)    
+(Intercept) -0.382494   0.002589 -147.734  &lt; 2e-16 ***
+fzone.L      0.137864   0.004485   30.740  &lt; 2e-16 ***
+fzone.Q      0.033487   0.004484    7.468 1.07e-13 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Approximate significance of smooth terms:
+           edf Ref.df      F p-value    
+s(year)  3.854      9  4.213  &lt;2e-16 ***
+s(month) 6.931      8 42.825  &lt;2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+R-sq.(adj) =  0.318   Deviance explained = 32.1%
+GCV = 0.019955  Scale est. = 0.019862  n = 2963</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>   dAICc df  
+m4  0.0  14.8
+m3  6.2  11.9</code></pre>
+</div>
+</div>
+</section>
+<section id="examine-nonlinear-year-effect-by-site" class="level2">
+<h2 class="anchored" data-anchor-id="examine-nonlinear-year-effect-by-site">Examine nonlinear year effect by site</h2>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-12_75a0e170eb5ab1261c39c8c10b871fb9">
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Family: gaussian 
+Link function: identity 
+
+Formula:
+ndti ~ s(year, fzone, bs = "fs") + s(month, bs = c("cc"))
+
+Parametric coefficients:
+            Estimate Std. Error t value Pr(&gt;|t|)
+(Intercept)   0.2539     0.4815   0.527    0.598
+
+Approximate significance of smooth terms:
+                edf Ref.df     F p-value    
+s(year,fzone) 8.471     30 34.77  &lt;2e-16 ***
+s(month)      6.912      8 42.84  &lt;2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+R-sq.(adj) =  0.319   Deviance explained = 32.2%
+GCV = 0.019947  Scale est. = 0.019836  n = 2963</code></pre>
+</div>
+</div>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-13_047ab9edffc94301eaa644b866007dad">
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-13-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-14_5ac699b33add4e77eb962569639909fc">
+<div class="cell-output cell-output-stdout">
+<pre><code>   dAICc df  
+m5  0.0  17.4
+m4  1.2  14.8</code></pre>
+</div>
+</div>
+<p>Nonlinear year by site is better, but the AIC difference is very small. So we will drop the year x zone interaction.</p>
+</section>
+<section id="examine-number-of-knots-on-year" class="level2">
+<h2 class="anchored" data-anchor-id="examine-number-of-knots-on-year">Examine number of knots on year</h2>
+<p>We start with an equivalent number of knots per year, and will not aggressively penalize the ‘year’ smooth.</p>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-15_d7246883179ce9ba71e8c0348c294709">
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Family: gaussian 
+Link function: identity 
+
+Formula:
+ndti ~ s(year, k = kn) + fzone + s(month, bs = c("cc"))
+
+Parametric coefficients:
+             Estimate Std. Error  t value Pr(&gt;|t|)    
+(Intercept) -0.382494   0.002580 -148.243  &lt; 2e-16 ***
+fzone.L      0.137859   0.004469   30.845  &lt; 2e-16 ***
+fzone.Q      0.033485   0.004469    7.493 8.83e-14 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Approximate significance of smooth terms:
+            edf Ref.df      F p-value    
+s(year)  13.782  16.06  3.855 4.4e-07 ***
+s(month)  6.915   8.00 43.257 &lt; 2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+R-sq.(adj) =  0.322   Deviance explained = 32.8%
+GCV = 0.019885  Scale est. = 0.019726  n = 2963</code></pre>
+</div>
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-15-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-16_e562461c2f5ca543e42ec0d11865b705">
+<div class="cell-output cell-output-stdout">
+<pre><code>   dAICc df  
+m6  0.0  24.7
+m5  9.1  17.4</code></pre>
+</div>
+</div>
+<p>Allowing the year effect to vary by year improves the fit.</p>
+</section>
+<section id="try-a-penalized-year-effect" class="level2">
+<h2 class="anchored" data-anchor-id="try-a-penalized-year-effect">Try a penalized year effect</h2>
+<p>This is to help determine how real these year to year peaks are.</p>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-17_8a813925a4f4bc6e1b5a33b12a6fec2e">
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Family: gaussian 
+Link function: identity 
+
+Formula:
+ndti ~ s(year, k = kn, bs = "ts") + fzone + s(month, bs = c("cc"))
+
+Parametric coefficients:
+             Estimate Std. Error  t value Pr(&gt;|t|)    
+(Intercept) -0.382494   0.002589 -147.719  &lt; 2e-16 ***
+fzone.L      0.137865   0.004485   30.737  &lt; 2e-16 ***
+fzone.Q      0.033488   0.004484    7.467 1.07e-13 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Approximate significance of smooth terms:
+           edf Ref.df      F p-value    
+s(year)  3.208     18  2.053  &lt;2e-16 ***
+s(month) 6.470      8 41.904  &lt;2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+R-sq.(adj) =  0.318   Deviance explained =   32%
+GCV = 0.019951  Scale est. = 0.019866  n = 2963</code></pre>
+</div>
+<div class="cell-output-display">
+<p><img src="eda_ndti_myd09ga_files/figure-html/unnamed-chunk-17-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+<div class="cell" data-hash="eda_ndti_myd09ga_cache/html/unnamed-chunk-18_450a220869f83a789f70edbbd2d277e4">
+<div class="cell-output cell-output-stdout">
+<pre><code>   dAICc df  
+m6  0.0  24.7
+m7  9.8  13.7</code></pre>
+</div>
+</div>
+<p>The wiggly model is slightly better than the smoother effect.</p>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>
