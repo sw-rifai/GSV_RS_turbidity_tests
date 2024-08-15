@@ -1,0 +1,124 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var roi = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([138.46230492536176, -34.89720644230154]),
+    s2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED"),
+    bbox = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[137.52350833681322, -34.11057715136463],
+          [137.52350833681322, -35.838879799462255],
+          [139.11652591493822, -35.838879799462255],
+          [139.11652591493822, -34.11057715136463]]], null, false),
+    merit = ee.Image("MERIT/DEM/v1_0_3"),
+    nasadem = ee.Image("NASA/NASADEM_HGT/001");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var roi = ee.Geometry.Point([138.025, -34.475]).buffer(100000)
+var date_start = "2020-11-01"
+var date_end = "2021-02-28"
+
+/**
+ * Function to mask clouds using the Sentinel-2 QA band
+ * @param {ee.Image} image Sentinel-2 image
+ * @return {ee.Image} cloud masked Sentinel-2 image
+ */
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000);
+}
+
+var dataset = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                  .filterBounds(roi)
+                  .filterDate(date_start, date_end)
+                  // Pre-filter to get less cloudy granules.
+                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',3))
+                  .map(maskS2clouds)
+                  .median();
+
+// dataset = dataset.updateMask(swir_mask)
+
+var a = 4;
+var visualization = {
+  min: [0.0001, 0.005, 0.005],
+  max: [0.05*a,0.05*a,0.05*a],
+  bands: ['B4', 'B3', 'B2'],
+};
+
+
+Map.addLayer(dataset, visualization, 'RGB SR',false);
+
+Export.image.toDrive(
+  //image, description, folder, fileNamePrefix, dimensions, region, scale, crs, crsTransform, maxPixels, shardSize, fileDimensions, skipEmptyTiles, fileFormat, formatOptions, priority)
+{
+  image:dataset.select(["B2","B3","B4"]),
+  description:"S2_median_RGB_"+date_start+"_"+date_end,
+  folder:"gee_SAWater_turbidity",
+  fileNamePrefix:"S2_median_RGB_"+date_start+"_"+date_end,
+  region:bbox,
+  scale:250,
+  crs:"EPSG:4326"
+}
+)
+// var d_toa = ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
+//                   .filterBounds(roi.buffer(100))
+//                   .filterDate('2021-01-01', '2022-03-15')
+//                   // Pre-filter to get less cloudy granules.
+//                   .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',5))
+//                   .map(maskS2clouds)
+//                   // .first();
+// d_toa = d_toa.updateMask(swir_mask)
+
+// var visualization_toa = {
+//   min: [0.002, 0.008, 0.014],
+//   max: [0.1,0.2,0.3],
+//   bands: ['B4', 'B3', 'B2'],
+// };
+
+
+// Map.addLayer(d_toa, visualization_toa, 'RGB TOA',false);
+// Map.addLayer(roi,{color:'yellow'})
+
+
+
+
+Map.addLayer(nasadem.select('elevation'),{min:0,max:350},'nasadem')
+
+var dataset = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                  .filterBounds(roi)
+                  .filterDate("2020-01-01","2024-01-01")
+                  .filter(ee.Filter.calendarRange(12,2,'month'))
+                  // Pre-filter to get less cloudy granules.
+                  .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE',2))
+                  .map(maskS2clouds)
+                  .median();
+var swir_mask = dataset.select("B11").lte(0.055).updateMask(nasadem.select("elevation").lte(0));
+Map.addLayer(swir_mask,{min:0,max:1})
+
+Export.image.toDrive(
+  //image, description, folder, fileNamePrefix, dimensions, region, scale, crs, crsTransform, maxPixels, shardSize, fileDimensions, skipEmptyTiles, fileFormat, formatOptions, priority)
+{
+  image:swir_mask,
+  description:"S2_swir_mask",
+  folder:"gee_SAWater_turbidity",
+  fileNamePrefix:"S2_swir_mask",
+  region:bbox,
+  scale:250,
+  crs:"EPSG:4326"
+}
+)

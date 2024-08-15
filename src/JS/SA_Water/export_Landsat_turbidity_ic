@@ -1,0 +1,496 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var l7 = ee.ImageCollection("LANDSAT/LE07/C02/T1_L2"),
+    l5 = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2"),
+    l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2"),
+    merit = ee.Image("MERIT/DEM/v1_0_3"),
+    amc = ee.FeatureCollection("users/srifai/SA_Water_ROIs"),
+    l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Descrip: 
+// Author: Sami Rifai
+// Date: 2023-09-14 (start)
+//       modifications ongoing
+// Notes: 
+// dates to check: "2016-12-08"
+
+
+// ==============================================================
+// User options ------------------------------------------------
+// ==============================================================
+var date_start = "2021-10-31" // 
+var date_end = "2023-10-31"  //
+
+var cloud_threshold = 50
+var valid_frac_threshold = 0.25
+var roi_bbox = amc.union(100).geometry().bounds();
+ 
+var out_var_names = "blue_to_green";
+var export_scale = 30; 
+var ic = l9
+var product_name = "LC09_C02_T1_L2"
+var fnp = product_name+"_"+out_var_names+"_"+date_start+"_"+date_end;
+print(fnp)
+
+
+var amc_geo = amc.union().geometry(); 
+
+
+// ==============================================================
+// Functions ---------------------------------------------------- 
+// ==============================================================
+var getQABits = function(image, start, end, newName) {
+  /*** Returns an image containing just the specified QA bits.
+ ** Args:
+ *   image - The QA Image to get bits from.
+ *   start - The first bit position, 0-based.
+ *   end   - The last bit position, inclusive.
+ *   name  - A name for the output image.
+ */
+
+    // Compute the bits we need to extract.
+    var pattern = 0;
+    for (var i = start; i <= end; i++) {
+       pattern += Math.pow(2, i);
+    }
+    return image.select([0], [newName])
+                  .bitwiseAnd(pattern)
+                  .rightShift(start);
+};
+
+// function maskL5sr(image) {
+// // Test images: (1) LANDSAT/LT05/C02/T1_L2/LT05_227062_19941210
+
+// //Bitmask for SR_CLOUD_QA
+// // Bit 0: Dark Dense Vegetation (DDV)
+// // Bit 1: Cloud
+// // Bit 2: Cloud Shadow
+// // Bit 3: Adjacent to Cloud
+// // Bit 4: Snow
+// // Bit 5: Water
+
+//   var qaMask = image.select('QA_PIXEL').bitwiseAnd(parseInt('11111', 2)).eq(0)
+//   var saturationMask = image.select('QA_RADSAT').eq(0);
+//   var cloud = getQABits(image.select("SR_CLOUD_QA"),1,1,'cloud').unmask().eq(0).focal_min(3)
+//   var cloud_shadow = getQABits(image.select("SR_CLOUD_QA"),2,2,'cloud_shadow').unmask().eq(0).focal_min(3)
+//   var cloud_adj = getQABits(image.select("SR_CLOUD_QA"),3,3,'cloud_adj').unmask().eq(0).focal_min(3)
+//   var water = getQABits(image.select("SR_CLOUD_QA"),5,5,'water')
+
+//   // Apply the scaling factors to the appropriate bands.
+//   var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
+//   var thermalBands = image.select('ST_B.*').multiply(0.00341802).add(149.0);
+
+//   var optMask = opticalBands.select("SR_B4")
+//                             .gte(0.001)
+//                             // .and(opticalBands.select("SR_B4").lte(0.5))
+//   var b4_mask = opticalBands.select("SR_B4").lte(0.6).focal_min(5)                          
+//   var thermMask = thermalBands.select("ST_B.*")
+//                             .gte(250)
+
+//   // Replace the original bands with the scaled ones and apply the masks.
+//   return image.addBands(opticalBands, null, true)
+//       .updateMask(qaMask)
+//       .updateMask(saturationMask)
+//       .updateMask(b4_mask)
+//       .updateMask(cloud_adj)
+//       .updateMask(cloud)
+//       .updateMask(cloud_shadow)
+
+// }
+
+// function maskL7sr(image) {
+// // Test images: (1) LANDSAT/LT05/C02/T1_L2/LT05_227062_19941210
+
+// //Bitmask for SR_CLOUD_QA
+// // Bit 0: Dark Dense Vegetation (DDV)
+// // Bit 1: Cloud
+// // Bit 2: Cloud Shadow
+// // Bit 3: Adjacent to Cloud
+// // Bit 4: Snow
+// // Bit 5: Water
+
+//   var qaMask = image.select('QA_PIXEL').bitwiseAnd(parseInt('11111', 2)).eq(0)
+//   var saturationMask = image.select('QA_RADSAT').eq(0);
+//   var cloud = getQABits(image.select("SR_CLOUD_QA"),1,1,'cloud').unmask().eq(0).focal_min(3)
+//   var cloud_shadow = getQABits(image.select("SR_CLOUD_QA"),2,2,'cloud_shadow').unmask().eq(0).focal_min(3)
+//   var cloud_adj = getQABits(image.select("SR_CLOUD_QA"),3,3,'cloud_adj').unmask().eq(0).focal_min(3)
+//   var water = getQABits(image.select("SR_CLOUD_QA"),5,5,'water')
+
+//   // Apply the scaling factors to the appropriate bands.
+//   var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
+//   var thermalBands = image.select('ST_B.*').multiply(0.00341802).add(149.0);
+
+//   var optMask = opticalBands.select("SR_B4")
+//                             .gte(0.001)
+//                             // .and(opticalBands.select("SR_B4").lte(0.5))
+//   var b4_mask = opticalBands.select("SR_B4").lte(0.6).focal_min(5)                          
+//   var thermMask = thermalBands.select("ST_B.*")
+//                             .gte(250)
+
+//   // Replace the original bands with the scaled ones and apply the masks.
+//   return image.addBands(opticalBands, null, true)
+//       .updateMask(qaMask)
+//       .updateMask(saturationMask)
+//       .updateMask(b4_mask)
+//       .updateMask(cloud_adj)
+//       .updateMask(cloud)
+//       .updateMask(cloud_shadow)
+
+// }
+
+
+function scaleL8(image){
+     // Apply the scaling factors to the appropriate bands.
+  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2)
+                          .rename(['uv-blue','blue','green','red','NIR','SWIR1','SWIR2'])
+  var thermalBands = image.select('ST_B.*').multiply(0.00341802).add(149.0);
+
+  var bg = opticalBands.select("blue").divide(opticalBands.select("green")).rename("blue_to_green")
+
+  var out = image.addBands(opticalBands, null, true)
+      .addBands(thermalBands, null, true)
+      .addBands(bg)
+  return(out)
+}
+
+function maskSand(image){
+  var sand = image.select("SWIR2").gte(0.025)
+  var sandMask = sand.eq(0);
+  var out = image.updateMask(sandMask)
+  return(out)
+}
+
+function maskL8sr(image) {
+
+  // Bit 0 - Fill
+  // Bit 1 - Dilated Cloud
+  // Bit 2 - Cirrus
+  // Bit 3 - Cloud
+  // Bit 4 - Cloud Shadow
+  var qaMask = image.select('QA_PIXEL').bitwiseAnd(parseInt('11111', 2)).eq(0)
+                    // .focal_min(3)
+  var saturationMask = image.select('QA_RADSAT').eq(0);
+  
+  var cloud = getQABits(image.select("QA_PIXEL"),1,1,'cloud')
+                        .unmask().eq(0).focalMin(3,'square','pixels')
+                        .reproject({crs: image.projection(), scale: 250})
+  var cloud_shadow = getQABits(image.select("QA_PIXEL"),4,4,'cloud_shadow')
+                        .unmask().eq(0).focalMin(3,'square','pixels')
+                        .reproject({crs: image.projection(), scale: 250})
+  var cloud_d = getQABits(image.select("QA_PIXEL"),1,1,'cloud_d')
+                          .unmask().eq(0).focalMin(3,'square','pixels')
+                        .reproject({crs: image.projection(), scale: 250})
+  var cirrus = getQABits(image.select("QA_PIXEL"),2,2,'cirrus')
+                        .unmask().eq(0).focalMin(3,'square','pixels')
+                        .reproject({crs: image.projection(), scale: 250})
+  var cloud_conf = getQABits(image.select("QA_PIXEL"),8,9,'cloud_conf')
+                        .unmask().eq(0).focalMin(3,'square','pixels')
+                        .reproject({crs: image.projection(), scale: 250})
+
+  // Replace the original bands with the scaled ones and apply the masks.
+  return image
+      .updateMask(qaMask)
+      .updateMask(saturationMask)
+      .updateMask(cloud)
+      .updateMask(cloud_shadow)
+      .updateMask(cloud_d)
+      .updateMask(cirrus) // 
+      // .addBands([cloud_conf])
+
+      // .reproject(ee.Projection('EPSG:3857').atScale(30))
+}
+
+
+var fn_turbidity_l8 = function(image) {
+          var turbidity = image.expression(
+              '(A_t * (p_w * scale_factor) / (1 - ((p_w * scale_factor )/ C)))', {
+                  'p_w': image.select('SR_B4'), //red band mid wv_len = 645.5nm
+                  'A_t': 378.46, //calib param (ACOLITE)
+                  'B_t': 0.33, //calib param (ACOLITE)
+                  'C': 0.19905, //calib param (ACOLITE)
+                  'pi': Math.PI,
+                  'scale_factor': 1//0.0001 //band info
+              }).rename('l8_turb');
+        var swir = image.select('SR_B6');
+        var turb_mask = turbidity//.updateMask(swir.lte(215))//.updateMask(turbidity.gte(0));
+        return image.addBands(turb_mask);
+    };
+
+var fn_t = function(image) {
+  // Description: Calculate turbidity estimate in Formazin Nephelometric Unit (FNU)
+  // Reference: Dogliotti et al 2015, Remote Sensing of Environment
+  // Input: image with red and SWIR1 bands in reflectane units
+  // Notes: See ACOLITE for most recent parameter calibrations
+  
+    var turbidity = image.expression(
+        '(A_t * (p_w * scale_factor) / (1 - ((p_w * scale_factor )/ C)))', {
+            'p_w': image.select('red'), //red band mid wv_len = 645.5nm
+            'A_t': 378.46, //calib param (ACOLITE)
+            'B_t': 0.33, //calib param (ACOLITE)
+            'C': 0.19905, //calib param (ACOLITE)
+            'pi': Math.PI,
+            'scale_factor': 1//0.0001 //band info
+        }).rename('turb_l8');
+        
+        // TO DO: mask turbidity for faulty values
+        // var swir_mask = image.select('SWIR1'); // UNUSED
+        // var turb_mask = turbidity.updateMask(swir_mask)
+                                    // .updateMask(turbidity.gte(0));
+                                    
+        return(image.addBands(turbidity));
+    };
+
+var fn_kd490 = function(image) {
+  // Description: Calculate diffuse attenuation coefficient (kd490)
+  // Reference: https://oceancolor.gsfc.nasa.gov/resources/atbd/kd/
+  // Input: image with blue and green in reflectane units
+  // Notes: See https://oceancolor.gsfc.nasa.gov/resources/atbd/kd/
+  
+    var log10_kd490 = image.expression(
+        'a0 + a1*log10(Blue/Green) + a2*(log10(Blue/Green))**2 + a3*(log10(Blue/Green))**3 + a4*(log10(Blue/Green))**4', {
+            'Blue': image.select('blue'), //
+            'Green': image.select('green'), //
+            'a0': -0.9405, // sensor specific calib param 
+            'a1': -1.5245, //sensor specific calib param  
+            'a2': 2.2392, //sensor specific calib param  
+            'a3': -2.4777,  //sensor specific calib param 
+            'a4': -1.1099, //sensor specific calib param  
+            'pi': Math.PI,
+            'scale_factor': 1//0.0001 //band info
+        }).rename('log10_kd490');
+        
+      var kd490 = ee.Image(0.0166).add(ee.Image(10).pow(log10_kd490))
+                    .rename("kd490_l8")
+
+        return(image.addBands(kd490));
+    };
+
+var fn_kd490_adi = function(image) {
+  // Description: Calculate diffuse attenuation coefficient (kd490)
+  // Reference: Adi et al 2013 IGARSS (Figure 4)
+  // Input: image with blue and green in reflectane units
+
+    var kd490 = image.expression('a0 + a1*(Blue/Green) + a2*(Blue/Green)**2',
+    {
+      'Blue': image.select('blue'), //
+      'Green': image.select('green'), //
+      'a0': 3.4725, // sensor specific calib param 
+      'a1': -6.2114, //sensor specific calib param  
+      'a2': 2.7792, //sensor specific calib param  
+      'scale_factor': 1//0.0001 //band info
+        }).rename("kd490_adi")
+    var bg = image.select("blue").divide(image.select("green")).rename("blue_to_green")
+    var out = image.addBands(kd490).addBands(bg);
+    return(out);
+    };
+
+var fn_kd490_adi_modified = function(image) {
+  // Description: Calculate diffuse attenuation coefficient (kd490)
+  // This follows Adi's relationship, but is then forced to a low kd490
+  // after the blue/green ratio increases beyond 1.
+  // Reference: Adi et al 2013 IGARSS (Figure 4)
+  // Input: image with blue and green in reflectane units
+
+    var kd490 = image.expression(
+      'a0 + a1*(Blue/Green) + a2*(Blue/Green)**2 + a3*log(Blue/Green)',
+    {
+      'Blue': image.select('blue'), //
+      'Green': image.select('green'), //
+      'a0': -1.01908, // sensor specific calib param 
+      'a1': 1.33892, //sensor specific calib param  
+      'a2': -0.10601, //sensor specific calib param  
+      'a3': -1.88839, 
+      'scale_factor': 1//0.0001 //band info
+        }).rename("kd490_adi_modified")
+    var bg = image.select("blue").divide(image.select("green")).rename("bg")
+    var out = image.addBands(kd490).addBands(bg);
+    return(out);
+    };
+
+
+function calc_valid_pixels(i){
+  var val = i.select("red").clip(amc_geo).gte(0).reduceRegion(
+    // reducer, geometry, scale, crs, crsTransform, bestEffort, maxPixels, tileScale)  
+    {
+      reducer:ee.Reducer.sum(),
+      geometry:amc_geo
+    }
+    )
+  var all = i.select("red").clip(amc_geo).unmask().reduceRegion(
+    // reducer, geometry, scale, crs, crsTransform, bestEffort, maxPixels, tileScale)  
+    {
+      reducer:ee.Reducer.count(),
+      geometry:amc_geo
+    }
+    )
+  val = ee.Number(val.get("red"));
+  all = ee.Number(all.get("red"));
+  var frac = val.divide(all)
+  var out = i.set("valid_frac",frac)
+  return(out)
+}
+
+ 
+// Main =========================================
+
+var ss = ic.filter(ee.Filter.date(date_start, date_end))
+           .filter(ee.Filter.lte("CLOUD_COVER", cloud_threshold))
+           .filter(ee.Filter.eq("WRS_PATH", 97))
+           .filter(ee.Filter.eq("WRS_ROW", 84))
+           .map(scaleL8)
+          .map(maskSand)
+          .map(maskL8sr)
+          // .map(fn_t)
+          // .map(fn_kd490)
+          // .map(fn_kd490_adi)
+          // .map(fn_kd490_adi_modified)
+           .map(function(i){
+             var out = i.updateMask(merit.unmask().eq(0))
+             var n_bands = out.bandNames().size()
+             out = out.set("n_bands",n_bands)
+                        // .clip(amc.union().geometry())
+             return(out)
+           })
+           .map(calc_valid_pixels)
+          .filter(ee.Filter.gte("valid_frac", valid_frac_threshold))
+
+// // remove empty images (important!)
+ss = ss.filter(ee.Filter.greaterThan('n_bands',0)) 
+
+var export_dates = ss.map(function(i){
+  var f = ee.Feature(null,{'date':i.date().format()})
+  return(f)
+});
+
+print(export_dates)
+
+
+// // // Prototype ===========================================================
+// // var image_id = "LANDSAT/LC08/C02/T1_L2/LC08_097084_20130611"
+// // var im = ee.Image(image_id)
+// // print(im)
+
+// var im = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+//       .filter(ee.Filter.eq("WRS_PATH",97))
+//       .filter(ee.Filter.eq("WRS_ROW",84))
+//       .filter(ee.Filter.date("2017-04-15","2017-04-16"))
+//           .map(scaleL8)
+//           // .map(maskSand)
+//           // .map(maskL8sr)
+//           .map(fn_t)
+//           .map(fn_kd490)
+//       .first()
+// im = maskL8sr(im)
+// im = fn_t(im)
+// im = fn_kd490(im)
+
+
+// // // // var pal_prism = ["#5F4690", "#1D6996", "#38A6A5", "#0F8554", "#73AF48", "#EDAD08", 
+// // // // "#E17C05", "#CC503E", "#94346E", "#6F4070", "#994E95"]
+// var pal_inferno = ["#000004FF", "#1B0C42FF", "#4B0C6BFF", "#781C6DFF", "#A52C60FF", 
+// "#CF4446FF", "#ED6925FF", "#FB9A06FF", "#F7D03CFF", "#FCFFA4FF"]
+
+// // // Map.addLayer(im,
+// // // // .select(["UV-Blue","Blue","Green","Red","redRat"]),
+// // //   {//palette:pal_inferno,
+// // //     bands:['Red','Green','Blue'],
+// // //     min:0,max:0.2
+// // //   },
+// // //   'true color')
+  
+// Map.addLayer(ss.first(),
+// // .select(["UV-Blue","Blue","Green","Red","redRat"]),
+//   {
+//     bands:['red','green','blue'],
+//     min:0,max:0.07
+//   }, 
+//   'RGB')
+
+// Map.addLayer(ss.select("turb_l8").first(),
+// // .select(["UV-Blue","Blue","Green","Red","redRat"]),
+//   {palette:pal_inferno,
+//     bands:['turb_l8'],
+//     min:0,max:10
+//   }, 
+//   'turb_l8',false)
+
+// Map.addLayer(ss.select("kd490_l8").first(),
+// // .select(["UV-Blue","Blue","Green","Red","redRat"]),
+//   {palette:pal_inferno,
+//     bands:['kd490_l8'],
+//     min:0,max:2
+//   }, 
+//   'kd490_l8',false)
+
+// Map.addLayer(ss.select("kd490_l8","kd490_adi","kd490_adi_modified").first(),
+// // .select(["UV-Blue","Blue","Green","Red","redRat"]),
+//   {palette:pal_inferno,
+//     bands:['kd490_adi'],
+//     min:0,max:2
+//   }, 
+//   'kd490_adi',false)
+
+// Map.addLayer(ss.select("kd490_l8","kd490_adi","kd490_adi_modified").first(),
+// // .select(["UV-Blue","Blue","Green","Red","redRat"]),
+//   {palette:pal_inferno,
+//     bands:['kd490_adi_modified'],
+//     min:0,max:2
+//   }, 
+//   'kd490_adi_modified',false)
+
+// Map.addLayer(ss.select("bg"),
+// // .select(["UV-Blue","Blue","Green","Red","redRat"]),
+//   {palette:pal_inferno,
+//     bands:['bg'],
+//     min:0,max:3
+//   }, 
+//   'bg',false)
+
+
+// // Map.addLayer(im.select('cloud_conf'),
+// // // .select(["UV-Blue","Blue","Green","Red","redRat"]),
+// //   {
+// //     bands:['cloud_conf'],
+// //     min:0,max:3
+// //   }, 
+// //   'cloud_conf')
+
+
+
+
+
+
+
+
+
+
+
+// // // // EXPORT SECTION ========================================================
+var export_stack = ss.select(out_var_names)
+                    .toBands()
+                    .toFloat(); 
+Export.image.toDrive(
+  // image, description, folder, fileNamePrefix, dimensions, region, scale, crs, crsTransform, maxPixels, shardSize, fileDimensions, skipEmptyTiles, fileFormat, formatOptions)
+{
+  image:export_stack,
+  description:fnp,
+  folder:"gee_SAWater_turbidity", // specify a folder in google drive
+  fileNamePrefix:fnp,
+  region:roi_bbox,
+  scale:export_scale,
+  crs:"EPSG:4326",
+  fileFormat:"GeoTIFF"
+}
+)
+
+Export.table.toDrive(//collection, description, folder, fileNamePrefix, fileFormat, selectors)
+{
+  collection:export_dates, 
+  description:"DATES_" +fnp,
+  folder:"gee_SAWater_turbidity", // specify a folder in google drive
+  fileNamePrefix:"DATES_"+fnp,
+  fileFormat:'csv'
+}
+)
+
+
+

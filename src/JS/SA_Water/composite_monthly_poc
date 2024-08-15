@@ -1,0 +1,125 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var mydocga = ee.ImageCollection("MODIS/006/MYDOCGA"),
+    myd09q1 = ee.ImageCollection("MODIS/061/MYD09Q1"),
+    myd09ga = ee.ImageCollection("MODIS/061/MYD09GA"),
+    myd13q1 = ee.ImageCollection("MODIS/061/MYD13Q1"),
+    l3smi = ee.ImageCollection("NASA/OCEANDATA/MODIS-Aqua/L3SMI"),
+    amc = ee.FeatureCollection("users/srifai/SA_Water_ROIs");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// User options =====================================
+var date_start = "2022-10-01"
+var date_end = "2023-03-30"
+
+
+// Functions =========================================
+var getQABits = function(image, start, end, newName) {
+    // Compute the bits we need to extract.
+    var pattern = 0;
+    for (var i = start; i <= end; i++) {
+       pattern += Math.pow(2, i);
+    }
+    var out = image.select([0], [newName])
+                  .bitwiseAnd(pattern)
+                  .rightShift(start);
+    return(image.addBands(out))
+};
+
+function qa_mydocga(image){
+  var qa = image.select('SummaryQA')
+  qa = getQABits(image, 0,1,"VI")
+  var good = qa.select("VI").eq(0); 
+  var i_out = image.updateMask(good); 
+  return(i_out); 
+}
+
+
+
+// // calculate Normalized Difference Turbidity Index
+// // b1:red, b4:green, b3: blue
+// function calc_ndti(i){
+//   var i.select()
+  
+//   // (r-g)/(r+g)
+//   var out = i
+//   return(out)
+// }
+
+
+// MAIN ====================================================
+var year_start = ee.Date(date_start).get("year")
+var year_end = ee.Date(date_end).get("year")
+var years = ee.List.sequence(year_start,year_end,1)
+var months = ee.List.sequence(1,12,1)
+var weeks = ee.List.sequence(1,52,1)
+var dates = years.map(function(y){
+  var out1 = weeks.map(function(w){
+    var out2 = ee.Date.parse("Y, w",
+        ee.String(ee.Number(y).toInt()).cat(", ").cat(ee.Number(w).toInt()))
+    return(out2)
+  })
+  return(out1)
+}).flatten().sort()
+
+
+var cm = dates.map(function(d){
+  var d1 = ee.Date(d)
+  var d2 = d1.advance(1,'week')
+  var out = l3smi.filter(ee.Filter.date(d1,d2))
+       .select(["poc",
+        "Rrs_531",
+      "Rrs_547",
+      "Rrs_555", 
+      "Rrs_645", 
+      "Rrs_667","Rrs_678"
+       ])
+       .mean()
+       .set("system:time_start",d1.millis())
+       .set("system:time_end",d1.millis())
+  return(out)
+})
+cm = ee.ImageCollection.fromImages(cm.flatten())
+               
+               
+               
+var inferno = ["#000004FF", "#1B0C42FF", "#4B0C6BFF", "#781C6DFF", "#A52C60FF", 
+"#CF4446FF", "#ED6925FF", "#FB9A06FF", "#F7D03CFF", "#FCFFA4FF"]               
+// Map.addLayer(cm, {min:0,max:0.003}, "Rrs_645",false)
+
+Map.addLayer(amc,{color:'yellow'},'amc',false)
+Map.addLayer(cm.select("poc"), 
+  {palette:inferno, 
+  min:0,max:900.4}, "poc",false)
+
+Map.setCenter(138.435, -34.985, 10)
+
+amc = amc.map(function(f){
+  f = f.set("label",f.get("zone"))
+  return(f)
+})
+print(amc)
+
+var tempTimeSeries = ui.Chart.image.seriesByRegion({
+  imageCollection: cm.select("poc"),
+  regions: amc,
+  reducer: ee.Reducer.mean(),
+  band: 'poc',
+  scale: 200,
+  xProperty: 'system:time_start',
+  seriesProperty: 'label'
+});
+tempTimeSeries.setChartType('ScatterChart');
+tempTimeSeries.setOptions({
+  title: 'Temperature over time in regions of the American West',
+  vAxis: {
+    title: 'Temperature (Celsius)'
+  },
+  lineWidth: 1,
+  pointSize: 4,
+  series: {
+    0: {color: "red"},
+    1: {color: "blue"},
+    2: {color: "green"}
+  }
+});
+
+print(tempTimeSeries);

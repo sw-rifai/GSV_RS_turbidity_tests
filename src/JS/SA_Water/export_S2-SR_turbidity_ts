@@ -1,0 +1,367 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var s2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED"),
+    s2_toa = ee.ImageCollection("COPERNICUS/S2"),
+    roi = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([138.4984326551987, -34.96921238033906]),
+    s2c = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY"),
+    ref = 
+    /* color: #98ff00 */
+    /* shown: false */
+    ee.Geometry.MultiPolygon(
+        [[[[138.36076629045112, -35.03482367042537],
+           [138.34977996232612, -34.754355255616616],
+           [138.3381069886933, -34.754355255616616],
+           [138.35115325334175, -35.03426144089715]]],
+         [[[138.16301238420112, -34.901467160125094],
+           [138.3436001527558, -34.898088229372604],
+           [138.342913507248, -34.88457111635704],
+           [138.16438567521675, -34.8879506030997]]]]),
+    shelf = /* color: #98ff00 */ee.Geometry.Point([121.6713575883029, -31.325892455438627]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+print("first", s2.first().date().format())
+
+// Descrip: 
+// Author: Sami Rifai 
+// Date: 2023-09-14 (start)
+//       modifications ongoing
+
+
+
+// ==============================================================
+// User options ------------------------------------------------
+// ==============================================================
+var amc = ee.FeatureCollection("users/srifai/SA_Water_ROIs");
+var amc_geo = amc.union().geometry(); 
+var mgrs_tiles = ["54HTG","53HQA"]
+var date_start = "2019-01-01"  //"2019-01-05" //'2019-04-05' //, 
+var date_end =  "2024-06-01" //"2019-01-14" //'2019-04-06' //"2023-09-18"
+// var date_start = "2021-01-01"
+// var date_end = "2022-01-01"
+var cloud_threshold = 50
+var valid_frac_threshold = 0.25
+var roi_bbox = amc.union(100).geometry().bounds();
+ 
+var out_var_names = "blue_to_green"
+var export_scale = 30; 
+var product_name = "S2-composited"
+var fnp = product_name+"_"+out_var_names+"_"+date_start+"_"+date_end;
+print(fnp)
+
+// =========================================================
+// Functions -----------------------------------------------
+// =========================================================
+
+/**
+ * Function to mask clouds using the Sentinel-2 QA band
+ * @param {ee.Image} image Sentinel-2 image
+ * @return {ee.Image} cloud masked Sentinel-2 image
+ */
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  var out = image.updateMask(mask).divide(10000);
+  
+  var optical = out.select(["B.*"],
+  ["aerosols","blue","green","red","rededge1","rededge2","rededge3","nir","rededge4",
+  "watervapor","cirrus","swir1","swir2"])
+  out = out.select(['QA.*']).addBands(optical)
+  out = out.copyProperties(image)
+  
+  return(out);
+}
+
+
+var fn_t = function(image) {
+  // Description: Calculate turbidity estimate in Formazin Nephelometric Unit (FNU)
+  // Reference: Dogliotti et al 2015, Remote Sensing of Environment
+  // Input: image with red and SWIR1 bands in reflectane units
+  // Notes: See ACOLITE for most recent parameter calibrations
+  
+    var turbidity = image.expression(
+        '(A_t * (p_w * scale_factor) / (1 - ((p_w * scale_factor )/ C)))', {
+            'p_w': image.select('red'), //red band mid wv_len = 645.5nm
+            'A_t': 366.14, //calib param (ACOLITE)
+            'B_t': 0.33, //calib param (ACOLITE)
+            'C': 0.19563, //calib param (ACOLITE)
+            'pi': Math.PI,
+            'scale_factor': 1//0.0001 //band info
+        }).rename('turb_s2');
+        
+        // TO DO: mask turbidity for faulty values
+        // var swir_mask = image.select('SWIR1'); // UNUSED
+        // var turb_mask = turbidity.updateMask(swir_mask)
+                                    // .updateMask(turbidity.gte(0));
+                                    
+        return(image.addBands(turbidity));
+    };
+
+var fn_kd490 = function(image) {
+  // Description: Calculate diffuse attenuation coefficient (kd490)
+  // Reference: https://oceancolor.gsfc.nasa.gov/resources/atbd/kd/
+  // Input: image with blue and green in reflectane units
+  // Notes: See https://oceancolor.gsfc.nasa.gov/resources/atbd/kd/
+  //       THESE COEFFICIENTS ARE FOR LANDSAT 8 - ARE THERE S2 COEFFICIENTS?
+    
+    var blue_to_green = image.select("blue").divide(image.select("green")).rename("blue_to_green")
+    var log10_kd490 = image.expression(
+        'a0 + a1*log10(Blue/Green) + a2*(log10(Blue/Green))**2 + a3*(log10(Blue/Green))**3 + a4*(log10(Blue/Green))**4', {
+            'Blue': image.select('blue'), //
+            'Green': image.select('green'), //
+            'a0': -0.9405, // sensor specific calib param 
+            'a1': -1.5245, //sensor specific calib param  
+            'a2': 2.2392, //sensor specific calib param  
+            'a3': -2.4777,  //sensor specific calib param 
+            'a4': -1.1099, //sensor specific calib param  
+            'pi': Math.PI,
+            'scale_factor': 1//0.0001 //band info
+        }).rename('log10_kd490');
+        
+      var kd490 = ee.Image(0.0166).add(ee.Image(10).pow(log10_kd490))
+                    .rename("kd490_s2")
+
+        return(image.addBands(kd490).addBands(blue_to_green));
+    };
+
+
+
+// Join two collections on their 'system:index' property.
+// The propertyName parameter is the name of the property
+// that references the joined image.
+function indexJoin(collectionA, collectionB, propertyName) {
+  var joined = ee.ImageCollection(ee.Join.saveFirst(propertyName).apply({
+    primary: collectionA,
+    secondary: collectionB,
+    condition: ee.Filter.equals({
+      leftField: 'system:index',
+      rightField: 'system:index'})
+  }));
+  // Merge the bands of the joined image.
+  return joined.map(function(image) {
+    return image.addBands(ee.Image(image.get(propertyName)));
+  });
+}
+
+// Aggressively mask clouds and shadows.
+function maskImage(image) {
+  // Compute the cloud displacement index from the L1C bands.
+  var cdi = ee.Algorithms.Sentinel2.CDI(image);
+  var s2cloud = image.select('probability');
+  var p_cloud = s2cloud.rename("p_cloud");
+  // var cirrus = image.select('B10').multiply(0.0001);
+  
+
+  // Assume low-to-mid atmospheric clouds to be pixels where probability
+  // is greater than 65%, and CDI is less than -0.5. For higher atmosphere
+  // cirrus clouds, assume the cirrus band is greater than 0.01.
+  // The final cloud mask is one or both of these conditions.
+  var isCloud = s2cloud.gt(50).and(cdi.lt(-0.5))//.or(cirrus.gt(0.01));
+  var isCloud2 = s2cloud.lt(10).focalMin(3, 'circle', 'pixels');
+
+  // Reproject is required to perform spatial operations at 20m scale.
+  // 20m scale is for speed, and assumes clouds don't require 10m precision.
+  isCloud = isCloud.focalMin(3)
+                   .focalMax(16); //16
+  isCloud = isCloud.reproject({crs: cdi.projection(), scale: 100});
+  isCloud2 = isCloud2.reproject({crs: cdi.projection(), scale: 100});
+
+  // Project shadows from clouds we found in the last step. This assumes we're working in
+  // a UTM projection.
+  var shadowAzimuth = ee.Number(90)
+      .subtract(ee.Number(image.get('MEAN_SOLAR_AZIMUTH_ANGLE')));
+
+  // With the following reproject, the shadows are projected 5km.
+  isCloud = isCloud.directionalDistanceTransform(shadowAzimuth, 50);
+  isCloud = isCloud.reproject({crs: cdi.projection(), scale: 100});
+
+  isCloud = isCloud.select('distance').mask();
+  
+  var optical = image.select(["B1","B2","B3","B4",'B5','B6',
+                              'B7','B8','B8A','B9','B11','B12'],
+  ["aerosols","blue","green","red","rededge1","rededge2","rededge3","nir","rededge4",
+  "watervapor","swir1","swir2"])
+  .divide(10000)
+  
+  var redMask = optical.select("red").lte(0.07);
+  var swir2Mask = optical.select("swir2").lte(0.1);
+
+  var out = image.addBands(optical).updateMask(isCloud.not())
+                  .updateMask(isCloud2)
+                   .updateMask(swir2Mask)
+                  // .updateMask(redMask)
+                  // .addBands(p_cloud)
+                   
+  // var out = image.select(['QA.*'])
+  //               .addBands(optical)
+  //               .addBands(p_cloud)
+  // out = out.copyProperties(image)
+  // out = optical.updateMask(isCloud.not())
+  
+  // var out = image.select('B2', 'B3', 'B4').updateMask(isCloud.not());
+  return(out)
+}
+
+
+// =========================================================
+// Main -----------------------------------------------
+// =========================================================
+
+
+// // Join the cloud probability dataset to surface reflectance.
+// var withCloudProbability = indexJoin(s2Sr, s2c, 'cloud_probability');
+
+
+
+s2 = s2
+  .filterBounds(shelf.buffer(10000))
+  // .filter(ee.Filter.inList('MGRS_TILE',mgrs_tiles))
+   .filter(ee.Filter.date(date_start, date_end))
+   .filter(ee.Filter.lte("CLOUDY_PIXEL_PERCENTAGE",cloud_threshold))
+var ss = indexJoin(s2, s2c, 'cloud_probability');
+ss = ss.map(maskImage)
+  // .map(fn_t)
+  // .map(fn_kd490)
+
+  // .filter(ee.Filter.lte("CLOUDY_PIXEL_PERCENTAGE",cloud_threshold))
+  // .sort("CLOUDY_PIXEL_PERCENTAGE")
+  // .map(function(i){
+  //   var out = i.set("system:time_start",i.date().millis())
+  //             .set("system:time_end",i.date().advance(1,'hour').millis())
+  //   return(out)
+  //   })
+
+Map.addLayer(ss.select('swir2'),null,'swir2',false)
+
+print("first", s2.first().date().update({
+  "hour":0,
+  "minute":0,
+  "second":1
+}).format())
+
+
+// extract the singular day of the acquisitions
+var a_dates = ss.map(function(i){
+  var f = ee.Feature(null,{'date':i.date().update(
+    {
+  "hour":0,
+  "minute":0,
+  "second":1
+   }).format()
+    
+  })
+  return(f)
+  }).distinct("date");
+
+
+// create mosaic from each day's acquisition(s)
+var ss2 = a_dates.map(function(f){
+  var d1 = ee.Date(f.get("date"))
+  var d2 = d1.advance(1,'day')
+  var out = ss.filter(ee.Filter.date(d1,d2))
+              .median()
+  out = ee.Image(out)
+              .set("system:time_start",d1.millis())
+  return(out)
+})
+ss2 = ee.ImageCollection(ss2)
+var export_stack = ss2.select(out_var_names)
+                    .toBands()
+                    .toFloat(); 
+
+// print("ss2",ss2.size())
+
+
+
+var export_dates = ss2.map(function(i){
+  var f = ee.Feature(null,{'date':i.date().format()})
+  return(f)
+});
+
+// print("export_dates",export_dates.size())
+
+
+
+// Viz maps ===========================================================
+
+print(ss)
+var rgbVis = {
+  min: 0.001,
+  max: 0.05,
+  bands: ['red', 'green', 'blue'],
+};
+
+Map.addLayer(ss.first(), rgbVis, 'RGB',false);
+
+// var inferno = ["#000004FF", "#1B0C42FF", "#4B0C6BFF", "#781C6DFF", "#A52C60FF", 
+// "#CF4446FF", "#ED6925FF", "#FB9A06FF", "#F7D03CFF", "#FCFFA4FF"]
+// Map.addLayer(ss2.select(out_var_names),{min:0,max:1,
+//   palette:inferno
+// },"out_var_names")
+
+// Map.addLayer(ss.select("turb_s2"), 
+// {bands:'turb_s2',min:10,max:30,palette:inferno}, 
+// 'turbidity',false);
+// Map.addLayer(ss.select('kd490_s2'), 
+// {bands:'kd490_s2',min:0.05,max:0.45,palette:inferno}, 
+// 'kd490_s2',false);
+// Map.setCenter(138.46126, -34.80551, 13)
+
+// var darkObjectSubtraction = function(i){
+//   var d = i.reduceRegion(ee.Reducer.min(),ref).toImage()
+//   var out = i.subtract(d);
+//   return(out)
+// }
+// var dos = darkObjectSubtraction(ss)
+// Map.addLayer(ss, rgbVis, 'DOS RGB');
+
+
+
+// // // // // // EXPORT SECTION ========================================================
+// Export.image.toDrive(
+//   // image, description, folder, fileNamePrefix, dimensions, region, scale, crs, crsTransform, maxPixels, shardSize, fileDimensions, skipEmptyTiles, fileFormat, formatOptions)
+// {
+//   image:export_stack,
+//   description:fnp,
+//   folder:"gee_SAWater_turbidity", // specify a folder in google drive
+//   fileNamePrefix:fnp,
+//   region:roi_bbox,
+//   scale:export_scale,
+//   crs:"EPSG:4326",
+//   fileFormat:"GeoTIFF"
+// }
+// )
+
+// Export.table.toDrive(//collection, description, folder, fileNamePrefix, fileFormat, selectors)
+// {
+//   collection:export_dates, 
+//   description:"DATES_" +fnp,
+//   folder:"gee_SAWater_turbidity", // specify a folder in google drive
+//   fileNamePrefix:"DATES_"+fnp,
+//   fileFormat:'csv'
+// }
+// )
+
+
+
+// Export.image.toDrive(
+//   // image, description, folder, fileNamePrefix, dimensions, region, scale, crs, crsTransform, maxPixels, shardSize, fileDimensions, skipEmptyTiles, fileFormat, formatOptions)
+// {
+//   image:ss.median().select(['red', 'green', 'blue']),
+//   description:product_name+"_"+"RGB"+"_"+date_start,
+//   folder:"gee_SAWater_turbidity", // specify a folder in google drive
+//   fileNamePrefix:product_name+"_"+"RGB"+"_"+date_start,
+//   region:roi_bbox,
+//   scale:10,
+//   crs:"EPSG:4326",
+//   fileFormat:"GeoTIFF"
+// }
+// )

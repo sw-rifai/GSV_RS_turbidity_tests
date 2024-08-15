@@ -1,0 +1,290 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var mydocga = ee.ImageCollection("MODIS/006/MYDOCGA"),
+    myd09q1 = ee.ImageCollection("MODIS/061/MYD09Q1"),
+    myd09ga = ee.ImageCollection("MODIS/061/MYD09GA"),
+    myd13q1 = ee.ImageCollection("MODIS/061/MYD13Q1"),
+    l3smi = ee.ImageCollection("NASA/OCEANDATA/MODIS-Aqua/L3SMI"),
+    amc = ee.FeatureCollection("users/srifai/SA_Water_ROIs"),
+    gpm = ee.ImageCollection("NASA/GPM_L3/IMERG_MONTHLY_V06"),
+    mod09ga = ee.ImageCollection("MODIS/061/MOD09GA");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Description: 
+// - Calculate NDTI from MODIS Ocean SR products
+// - Export time series           
+// Notes: 
+// - Something is wrong with 2022+ in the MYD09GA. Reduce regions works before 2022-01-01
+// - The chart also works, but the reduceRegiosn fails with the following:
+// "FeatureCollection (Error)
+// Error in map(ID=65):
+// Image.select: Pattern 'ndti' did not match any bands."
+
+// User options =====================================
+var date_start = "2000-03-01"  // "2000-03-01"
+var date_end = "2023-07-01"  // "2021-12-31"
+var roi = amc; 
+var ic = mod09ga; // check!
+var product_name = "MOD09GA" // check!
+var out_var_names = "NDTI_medianCountSD"
+var fnp = product_name+"_"+out_var_names+"_"+date_start+"_"+date_end
+print(fnp)
+
+// viz options
+var inferno = ["#000004FF", "#1B0C42FF", "#4B0C6BFF", "#781C6DFF", "#A52C60FF", 
+"#CF4446FF", "#ED6925FF", "#FB9A06FF", "#F7D03CFF", "#FCFFA4FF"]               
+
+
+
+// Functions =========================================
+var getQABits = function(image, start, end, newName) {
+    // Compute the bits we need to extract.
+    var pattern = 0;
+    for (var i = start; i <= end; i++) {
+       pattern += Math.pow(2, i);
+    }
+    var out = image.select([0], [newName])
+                  .bitwiseAnd(pattern)
+                  .rightShift(start);
+    return(image.addBands(out))
+};
+
+
+function qa_mydocga(i){
+  var qa = i.select('QC_500m').unmask()
+  qa = getQABits(qa, 0,1,"VI")
+  var good = qa.select("VI").eq(0); 
+
+  cloud = getQABits(i.select("state_1km"), 0,1,"cloud");
+  var cloud = cloud.select("cloud").eq(0); 
+
+
+  var i_out = i.unmask().updateMask(good)
+                        .updateMask(cloud); 
+  return(i_out); 
+}
+
+// calculate Normalized Difference Turbidity Index
+// b1:red, b4:green, b3: blue
+function calc_ndti(i){
+  // MYD09GA
+  // green: sur_refl_b04
+  // red: sur_refl_b01
+  // ndti = (r-g)/(r+g)   // scale factor is equivalent, so don't need to apply
+  var ndti = i.normalizedDifference(["sur_refl_b01","sur_refl_b04"])
+              .rename("ndti")
+              .toDouble()
+
+  var out = i.addBands(ndti)
+  return(out)
+}
+
+function calc_kd490(i){
+  // Reference: Tomlinson et al., 2019 Remote Sensing Letters
+  // Description: empirical Kd490 developed for the Chesapeake bay
+  // notes: a1 and a0 were derived for the Chesapeake
+  // Equation: 
+  // Kd = a1 * [(R645 - R868)/(R469 - R858)] + a0
+  // a1: 2.8
+  // a0: -0.69
+  // 
+  // For MYD09GA
+  // R645: sur_refl_b01
+  // R858: sur_refl_b02
+  // R469: sur_refl_b03
+  var kd490 = i.expression(
+    "(a1 * [(R645 - R868)/(R469 - R858)] + a0)",
+    {R645: i.select("sur_refl_b01"),
+     R858: i.select("sur_refl_b02"),
+     R469: i.select("sur_refl_b03"),
+     a1: 2.8,
+     a0: -0.69
+    })
+    .rename("kd490")
+    .toDouble()
+
+  var out = i.addBands(ndti)
+  return(out)
+}
+
+
+
+// MAIN ====================================================
+
+// assemble list of dates
+var year_start = ee.Date(date_start).get("year")
+var year_end = ee.Date(date_end).get("year")
+var years = ee.List.sequence(year_start,year_end,1)
+var months = ee.List.sequence(1,12,1)
+var weeks = ee.List.sequence(1,52,1)
+var dates = years.map(function(y){
+  var out1 = weeks.map(function(w){
+    var out2 = ee.Date.parse("Y, w",
+        ee.String(ee.Number(y).toInt()).cat(", ").cat(ee.Number(w).toInt()))
+    return(out2)
+  })
+  return(out1)
+}).flatten().sort()
+// print(dates)
+
+// fix AMC geometries
+amc = amc.map(function(f){
+  var out = f.simplify(100)
+             .buffer(-500);
+  return(out)
+})
+
+// composite IC by week
+var ic2 = dates.map(function(d){
+  var d1 = ee.Date(d)
+  var d2 = d1.advance(1,'week')
+  var out = ic.filter(ee.Filter.date(d1,d2))
+              .map(calc_ndti)
+              .map(qa_mydocga)
+       .median()
+       .set("system:time_start",d1.millis())
+       .set("system:time_end",d1.millis())
+  var n_bands = out.bandNames().size()
+  out = out.set("n_bands",n_bands)
+
+return(out)
+})
+ic2 = ee.ImageCollection.fromImages(ic2.flatten())
+ic2 = ic2.filter(ee.Filter.greaterThan('n_bands',0))
+
+// print('ic',ic.first())
+// print('ic2', ic2.first())
+
+// var z_stats = ic2.map(function(i){
+//   var out = i.select("ndti").reduceRegions({
+//               collection:amc,
+//               reducer:ee.Reducer.median(),
+//               scale:1000,
+//               tileScale:16
+//               })
+//               return(out);
+// }).flatten();
+// // print(z_stats.limit(5))
+
+// apply zonal statistics on the image collection for all the coordinates
+var data = ic2.map(function(image) {
+  return image.select("ndti")
+              .reduceRegions({
+          collection: amc, 
+          reducer: ee.Reducer.median()
+                             .combine(ee.Reducer.count(),null,true)
+                             .combine(ee.Reducer.stdDev(),null,true), 
+          scale: 1000,
+          tileScale:16
+        })
+    .map(function(f) {
+    return f.set({
+      date: image.date().format(),
+      product: product_name
+    })
+  })
+}).flatten()
+
+data = data.map(function(f){return f.select(['.*'],null, false)}); 
+// print(data.limit(3))
+
+
+Export.table.toDrive(//collection, description, folder, fileNamePrefix, fileFormat, selectors)
+{
+  collection:data, 
+  description:fnp,
+  folder:"gee_SAWater_turbidity", // specify a folder in google drive
+  fileNamePrefix:fnp,
+  fileFormat:'csv'
+}
+)
+
+               
+// // Tests ===============================================================
+
+// Map.addLayer(amc); 
+// print(amc)
+
+// // apply zonal statistics on the image collection for all the coordinates
+// var data = gpm.filterDate(date_start, date_end)
+//   .map(function(image) {
+//   return image.select("precipitation").reduceRegions({
+//     collection: amc, 
+//     reducer: ee.Reducer.mean(), 
+//     scale: 1000
+//   })
+//     .map(function(f) {
+//     return f.set({
+//       date: image.date().format()
+//     })
+//   })
+// }).flatten()
+
+// // remove json coordinates -> reduces file size
+// data = data.map(function(f){return f.select(['.*'],null, false)}); 
+
+// // examine a subset
+// print(data.limit(10))
+
+
+// var i1 = ic.first();
+// var i2 = ic.filterDate(i1.date().advance(1,'day'),i1.date().advance(2,'day'))
+//           .first();
+// i1 = qa_mydocga(i1); 
+// i1 = calc_ndti(i1);
+// i2 = qa_mydocga(i2); 
+// i2 = calc_ndti(i2);
+
+
+// Map.addLayer(i1, 
+//   {palette:inferno.reverse(), 
+//   bands:['ndti'],
+//   min:-0.75,max:0}, "i1 ndti",true)
+// Map.addLayer(i2, 
+//   {palette:inferno.reverse(), 
+//   bands:['ndti'],
+//   min:-0.75,max:0}, "i2 ndti",true)
+
+
+
+// // // Visualization ====================================================               
+// // // Map.addLayer(cm, {min:0,max:0.003}, "Rrs_645",false)
+
+// // Map.addLayer(amc,{color:'yellow'},'amc',false)
+
+// // Map.addLayer(ic2.select("ndti"), 
+// //   {palette:inferno.reverse(), 
+// //   min:-0.75,max:0}, "ndti",false)
+
+// // Map.setCenter(138.435, -34.985, 10)
+
+// amc = amc.map(function(f){
+//   f = f.set("label",f.get("zone"))
+//   return(f)
+// })
+// // print(amc)
+
+// var ndtiTimeSeries = ui.Chart.image.seriesByRegion({
+//   imageCollection: ic2.select("ndti"),
+//   regions: amc,
+//   reducer: ee.Reducer.median(),
+//   band: 'ndti',
+//   scale: 200,
+//   xProperty: 'system:time_start',
+//   seriesProperty: 'label'
+// });
+// ndtiTimeSeries.setChartType('ScatterChart');
+// ndtiTimeSeries.setOptions({
+//   title: 'NDTI over regions off Adelaide coast',
+//   vAxis: {
+//     title: 'NDTI'
+//   },
+//   lineWidth: 1,
+//   pointSize: 4,
+//   series: {
+//     0: {color: "red"},
+//     1: {color: "blue"},
+//     2: {color: "green"}
+//   }
+// });
+
+// print(ndtiTimeSeries);
+

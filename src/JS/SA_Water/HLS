@@ -1,0 +1,37 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var hls = ee.ImageCollection("NASA/HLS/HLSL30/v002"),
+    roi = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([138.47291651635635, -34.819366943555764]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var date_start = "2017-04-05"
+var date_end = "2018-04-05";
+var cloud_threshold = 10; 
+
+
+// Functions =================================
+
+var rename_bands = function(i){
+  var optical_names = ["uv-blue","blue","green","red","nir","swir1","swir2"]
+  var optical = i.select(['B1','B2','B3','B4','B5','B6','B7'])
+                 .rename(optical_names)
+  var out = i.addBands(optical)
+  return(out)
+}
+
+var ss = hls.filterBounds(roi)
+            .filter(ee.Filter.lte("CLOUD_COVERAGE",cloud_threshold))
+            .map(rename_bands)
+print(ss)
+
+var ss2 = ss
+            .max()
+Map.addLayer(ss2,{},"ss2",false)
+
+
+var inferno = ["#000004FF", "#1B0C42FF", "#4B0C6BFF", "#781C6DFF", "#A52C60FF", 
+"#CF4446FF", "#ED6925FF", "#FB9A06FF", "#F7D03CFF", "#FCFFA4FF"]
+Map.addLayer(ss2.select("red"),{min:0,max:0.05,
+  palette:inferno
+},"out_var_names")

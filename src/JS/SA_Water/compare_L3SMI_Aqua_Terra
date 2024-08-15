@@ -1,0 +1,29 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var aqua = ee.ImageCollection("NASA/OCEANDATA/MODIS-Aqua/L3SMI"),
+    terra = ee.ImageCollection("NASA/OCEANDATA/MODIS-Terra/L3SMI");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+var ss1 = aqua.filterDate("2019-08-01","2020-08-01")
+              .map(function(i){
+                var out = i.select("Rrs_488").divide(i.select("Rrs_547"))
+                           .rename("bg")
+                out = i.addBands(out)
+                return(out)
+              })
+              
+var ss2 = terra.filterDate("2019-08-01","2020-08-01")
+              .map(function(i){
+                var out = i.select("Rrs_488").divide(i.select("Rrs_547"))
+                           .rename("bg")
+                out = i.addBands(out)
+                return(out)
+              })
+
+
+Map.addLayer(ss1.select("bg"),null,'aqua',false)
+Map.addLayer(ss2.select('bg'),null,'terra',false)
+
+Map.addLayer(ss2.select("bg").mean().subtract(ss1.select("bg").mean()),{min:-0.2,max:0.2,palette:['red','black','blue']},"BG difference",false)
+Map.addLayer(ss1.select("Rrs_667").mean().subtract(ss2.select("Rrs_667").mean()),
+          {min:-0.001,max:0.001,palette:['red','black','blue']},"667 difference")
+          

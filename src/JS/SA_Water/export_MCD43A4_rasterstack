@@ -1,0 +1,333 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var mydocga = ee.ImageCollection("MODIS/006/MYDOCGA"),
+    myd09q1 = ee.ImageCollection("MODIS/061/MYD09Q1"),
+    myd09ga = ee.ImageCollection("MODIS/061/MYD09GA"),
+    myd13q1 = ee.ImageCollection("MODIS/061/MYD13Q1"),
+    l3smi = ee.ImageCollection("NASA/OCEANDATA/MODIS-Aqua/L3SMI"),
+    amc = ee.FeatureCollection("users/srifai/SA_Water_ROIs"),
+    gpm = ee.ImageCollection("NASA/GPM_L3/IMERG_MONTHLY_V06"),
+    mod09ga = ee.ImageCollection("MODIS/061/MOD09GA"),
+    mcd43a4 = ee.ImageCollection("MODIS/061/MCD43A4"),
+    mod44w = ee.ImageCollection("MODIS/006/MOD44W");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Description: 
+// - Calculate turbidity indices from MODIS SR products
+// - Export daily time series           
+// - Necessary to export in two parts because max bands for image export is 5000
+  
+// User options =====================================
+// FOR TESTING
+var date_start = "2016-06-01"
+var date_end = "2017-08-01"
+
+
+// For MCD
+// part 1: "2000-02-24" to "2012-12-31"
+// part 2: "2012-12-31" to "2023-07-11"
+
+// PART 1
+// var date_start = "2000-02-24"  // 
+// var date_end = "2012-12-31" // 
+
+// PART 2
+// var date_start = "2012-12-31"  // 
+// var date_end = "2023-11-01" // 
+
+var merit = ee.Image("MERIT/DEM/v1_0_3")
+var roi = amc; 
+var ic = mcd43a4; // check!
+var ic_qa = ee.ImageCollection('MODIS/061/MCD43A2'); 
+var water_mask = mod44w.sort("system:time_start",false)
+                       .first()
+                       .select("water_mask")
+var product_name = "MCD43A4" // check!
+var time_step = "daily";
+var out_var_names = "blue_to_green"
+var link_tag = "" // CHANGE!
+var fnp = product_name+"_"+out_var_names+"_"+time_step+"_"+date_start+"_"+date_end+
+          "_" + link_tag;
+print(fnp)
+
+// viz options
+var inferno = ["#000004FF", "#1B0C42FF", "#4B0C6BFF", "#781C6DFF", "#A52C60FF", 
+"#CF4446FF", "#ED6925FF", "#FB9A06FF", "#F7D03CFF", "#FCFFA4FF"]               
+var pal_inferno = ["#000004FF", "#1B0C42FF", "#4B0C6BFF", "#781C6DFF", "#A52C60FF", 
+"#CF4446FF", "#ED6925FF", "#FB9A06FF", "#F7D03CFF", "#FCFFA4FF"]
+
+var roi_bbox = amc.union(500).geometry().buffer(2000).bounds(500);
+
+
+// Functions =========================================
+var getQABits = function(image, start, end, newName) {
+    // Compute the bits we need to extract.
+    var pattern = 0;
+    for (var i = start; i <= end; i++) {
+       pattern += Math.pow(2, i);
+    }
+    var out = image.select([0], [newName])
+                  .bitwiseAnd(pattern)
+                  .rightShift(start);
+    return(image.addBands(out))
+};
+
+
+function qa_mcd43(i){
+  // Mandatory
+  // red
+  var qa_b1 = getQABits(i.select("BRDF_Albedo_Band_Mandatory_Quality_Band1"), 0,1,"qa_b1")
+                         .select("qa_b1").eq(0);
+
+  // blue
+  var qa_b3 = getQABits(i.select("BRDF_Albedo_Band_Mandatory_Quality_Band3"), 0,1,"qa_b3")
+                         .select("qa_b3").eq(0);
+
+
+  // green
+  var qa_b4 = getQABits(i.select("BRDF_Albedo_Band_Mandatory_Quality_Band4"), 0,1,"qa_b4")
+                         .select("qa_b4").eq(0);
+
+
+  // BRDF qa score
+  // blue
+  var qa_blue = getQABits(i.select("BRDF_Albedo_Band_Quality_Band3"), 0,2,"qa_blue")
+                         .select("qa_blue").eq(0);
+  // green
+  var qa_green = getQABits(i.select("BRDF_Albedo_Band_Quality_Band4"), 0,2,"qa_green")
+                         .select("qa_green").eq(0);
+
+  // red
+  var qa_red = getQABits(i.select("BRDF_Albedo_Band_Quality_Band1"), 0,2,"qa_red")
+                         .select("qa_red").eq(0);
+
+
+  var i_out = i.unmask()
+               .updateMask(qa_b1) // red
+               .updateMask(qa_b3) // blue
+               .updateMask(qa_b4) // green
+               .updateMask(qa_blue) // red
+               .updateMask(qa_green) // blue
+               .updateMask(qa_red) // green
+  return(i_out); 
+}
+
+function calc_ndti(i){
+  // calculate Normalized Difference Turbidity Index
+  // b1:red, b4:green, b3: blue
+  // MYD09GA
+  // green: sur_refl_b04
+  // red: sur_refl_b01
+  // ndti = (r-g)/(r+g)   // scale factor is equivalent, so don't need to apply
+  var ndti = i.normalizedDifference(["sur_refl_b01","sur_refl_b04"])
+              .rename("ndti")
+              .toDouble()
+
+  var out = i.addBands(ndti)
+  return(out)
+}
+
+var wang_kd490 = function(image) {
+  // Description: Calculate diffuse attenuation coefficient (kd490)
+  // Reference: 
+  // Input: image with blue and green in reflectane units
+  // Notes: See https://oceancolor.gsfc.nasa.gov/resources/atbd/kd/
+  
+    var w_kd490 = image.expression(
+ '(2.697e-04)/R488 + 1.045*(R667/R488) + 4.18*(7e-04*2.7135*(R667))*(1 - 0.52*exp(-0.002533/R488 - 9.817*(R667/R488)))', {
+            'R667': image.select('Nadir_Reflectance_Band1'), //
+            'R488': image.select('Nadir_Reflectance_Band3')
+        }).rename('wang_kd490');
+        
+      // var kd490 = ee.Image(0.0166).add(ee.Image(10).pow(log10_kd490))
+      //               .rename("w_kd490")
+
+        return(image.addBands(w_kd490));
+    };
+
+function tomlinson_kd490(i){
+  // TO DELETE. VERY INEFFECTIVE
+  // Reference: Tomlinson et al., 2019 Remote Sensing Letters
+  // Description: Empirical Kd490 developed for the Chesapeake bay
+  // notes: a1 and a0 were derived for the Chesapeake
+  // Equation: 
+  // Kd = a1 * [(R645 - R868)/(R469 - R858)] + a0
+  // a1: 2.8
+  // a0: -0.69
+  // scale factor is equivalent, so don't need to apply
+  // 
+  // For MYD09GA
+  // R645: sur_refl_b01
+  // R858: sur_refl_b02
+  // R469: sur_refl_b03
+  var kd490 = i.expression(
+    "(a1*((R645 - R858)/(R469 - R858)) + a0)",
+    {R645: i.select("sur_refl_b01"),
+    R858: i.select("sur_refl_b02"),
+    R469: i.select("sur_refl_b03"),
+    a1: 2.8,
+    a0: -0.69
+    })
+    .rename("kd490")
+    .toDouble()
+
+  var out = i.addBands(kd490)
+  return(out)
+}
+
+var fn_kd490 = function(image) {
+  // Description: Calculate diffuse attenuation coefficient (kd490)
+  // Reference: https://oceancolor.gsfc.nasa.gov/resources/atbd/kd/
+  // Input: image with blue and green in reflectane units
+  // Notes: See https://oceancolor.gsfc.nasa.gov/resources/atbd/kd/
+  
+    var log10_kd490 = image.expression(
+        'a0 + a1*log10(Blue/Green) + a2*(log10(Blue/Green))**2 + a3*(log10(Blue/Green))**3 + a4*(log10(Blue/Green))**4', {
+            'Blue': image.select('Nadir_Reflectance_Band3'), //
+            'Green': image.select('Nadir_Reflectance_Band4'), //
+            'a0': -0.8813, // sensor specific calib param 
+            'a1': -2.0584, //sensor specific calib param  
+            'a2': 2.5878, //sensor specific calib param  
+            'a3': -3.4885,  //sensor specific calib param 
+            'a4': -1.5061 //sensor specific calib param  
+        }).rename('log10_kd490');
+        
+      var kd490 = ee.Image(0.0166).add(ee.Image(10).pow(log10_kd490))
+                    .rename("kd490_mod")
+
+        return(image.addBands(kd490));
+    };
+
+
+var fn_calc_blue_to_green = function(image){
+  var bg = image.select("Nadir_Reflectance_Band3").divide(image.select("Nadir_Reflectance_Band4"))
+                .rename("blue_to_green");
+                
+  var out = image.addBands(bg.select("blue_to_green"));
+  return(out)
+}
+
+
+// MAIN ====================================================
+
+// assemble list of dates
+var year_start = ee.Date(date_start).get("year")
+var year_end = ee.Date(date_end).get("year")
+var years = ee.List.sequence(year_start,year_end,1)
+var ydays = ee.List.sequence(1,365,1)
+
+var dates = years.map(function(y){
+  var out1 = ydays.map(function(d){
+    var out2 = ee.Date.parse("Y, D",
+        ee.String(ee.Number(y).toInt()).cat(", ").cat(ee.Number(d).toInt()))
+    return(out2)
+  })
+  return(out1)
+}).flatten().sort()
+dates = dates.filter(ee.Filter.greaterThanOrEquals('item',ee.Date(date_start)))
+dates = dates.filter(ee.Filter.lessThanOrEquals('item',ee.Date(date_end)))
+// print(dates)
+
+// fix AMC geometries
+amc = amc.map(function(f){
+  var out = f.simplify(100)
+             .buffer(-500);
+  return(out)
+})
+
+// ============================================================
+// JOINS //////////////////////////////////////////////////////
+// Define an inner join.
+ic = ic.filter(ee.Filter.date(date_start,date_end))
+ic_qa = ic_qa.filter(ee.Filter.date(date_start,date_end))
+
+var innerJoin = ee.Join.inner();
+
+// Specify an equals filter for image timestamps.
+var filterTimeEq = ee.Filter.equals({
+  leftField: 'system:time_start',
+  rightField: 'system:time_start'
+});
+
+// Apply the join.
+var innerJoinedMODIS = innerJoin.apply(ic, ic_qa, filterTimeEq);
+// Map a function to merge the results in the output FeatureCollection.
+var joinedMODIS = innerJoinedMODIS.map(function(feature) {
+  return ee.Image.cat(feature.get('primary'), feature.get('secondary'));
+});
+
+ic = ee.ImageCollection(joinedMODIS)
+// Print the result of merging.
+print('Inner join, merged bands:', ic);
+// ============================================================
+
+
+// composite IC by week
+var ic2 = dates.map(function(d){
+  var d1 = ee.Date(d)
+  var d2 = d1.advance(1,'day')
+  var out = ic.filter(ee.Filter.date(d1,d2))
+              .map(fn_calc_blue_to_green)
+              // .map(calc_ndti)
+              // .map(fn_kd490)
+              // .map(wang_kd490)
+              .map(qa_mcd43)
+              .map(function(i){
+              var out = i.updateMask(merit.unmask().eq(0))
+              return(out)
+              })
+       .median()
+       .set("system:time_start",d1.millis())
+       .set("system:time_end",d1.millis())
+  var n_bands = out.bandNames().size()
+  out = out.set("n_bands",n_bands)
+
+return(out)
+})
+ic2 = ee.ImageCollection.fromImages(ic2.flatten())
+
+// remove empty images (important!)
+ic2 = ic2.filter(ee.Filter.greaterThan('n_bands',0)) 
+var export_dates = ic2.map(function(i){
+  var f = ee.Feature(null,{'date':i.date().format()})
+  return(f)
+});
+var export_stack = ic2.select(out_var_names).toBands()
+                      .updateMask(water_mask);
+
+// print(export_dates)
+
+Map.addLayer(ic2.select("blue_to_green"),
+{min:0,max:2,palette:pal_inferno.reverse()},"blue_to_green")
+// Map.addLayer(ic2.select("w_kd490"),
+// {min:0,max:5,palette:pal_inferno,bands:["wang_kd490"]},"wang_kd490")
+
+
+
+
+
+// // Export section =====================================================
+// Export.image.toDrive(
+//   // image, description, folder, fileNamePrefix, dimensions, region, scale, crs, crsTransform, maxPixels, shardSize, fileDimensions, skipEmptyTiles, fileFormat, formatOptions)
+// {
+//   image:export_stack,
+//   description:fnp,
+//   folder:"gee_SAWater_turbidity", // specify a folder in google drive
+//   fileNamePrefix:fnp,
+//   region:roi_bbox,
+//   scale:500,
+//   crs:"EPSG:4326",
+//   fileFormat:"GeoTIFF"
+// }
+// )
+
+// Export.table.toDrive(//collection, description, folder, fileNamePrefix, fileFormat, selectors)
+// {
+//   collection:export_dates, 
+//   description:"DATES_" +fnp,
+//   folder:"gee_SAWater_turbidity", // specify a folder in google drive
+//   fileNamePrefix:"DATES_"+fnp,
+//   fileFormat:'csv'
+// }
+// )
+
+
+

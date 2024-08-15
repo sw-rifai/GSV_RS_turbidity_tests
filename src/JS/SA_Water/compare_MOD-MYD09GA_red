@@ -1,0 +1,113 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var mod = ee.ImageCollection("MODIS/061/MOD09GA"),
+    myd = ee.ImageCollection("MODIS/061/MYD09GA");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var date_start = "2016-09-01"
+var date_end =  "2016-12-31"
+
+// Functions ================================================================
+var getQABits = function(image, start, end, newName) {
+    // Compute the bits we need to extract.
+    var pattern = 0;
+    for (var i = start; i <= end; i++) {
+       pattern += Math.pow(2, i);
+    }
+    var out = image.select([0], [newName])
+                  .bitwiseAnd(pattern)
+                  .rightShift(start);
+    return(image.addBands(out))
+};
+
+function qa_mod09ga(i){
+  var qa = i.select('QC_500m').unmask()
+  qa = getQABits(qa, 0,1,"VI")
+  var good = qa.select("VI").lte(1); 
+
+  // red
+  var qa_b1 = getQABits(i.select("QC_500m"), 2,5,"qa_b1");
+  qa_b1 = qa_b1.select("qa_b1").eq(0); 
+
+  // nir
+  var qa_b2 = getQABits(i.select("QC_500m"), 6,9,"qa_b2");
+  qa_b2 = qa_b2.select("qa_b2").eq(0); 
+
+  // blue
+  var qa_b3 = getQABits(i.select("QC_500m"), 10,13,"qa_b3");
+  qa_b3 = qa_b3.select("qa_b3").eq(0); 
+
+  // green
+  var qa_b4 = getQABits(i.select("QC_500m"), 14,17,"qa_b4");
+  qa_b4 = qa_b4.select("qa_b4").eq(0); 
+
+  var cloud = getQABits(i.select("state_1km"), 0,1,"cloud");
+  cloud = cloud.select("cloud").eq(0); 
+
+  var shadow = getQABits(i.select("state_1km"), 2,2,"shadow");
+  shadow = shadow.select("shadow").eq(0); 
+
+  var brdf = getQABits(i.select("state_1km"), 14,14,"brdf");
+  brdf = brdf.select("brdf").eq(0); 
+
+  var cloudadj = getQABits(i.select("state_1km"), 13,13,"cloudadj");
+  cloudadj = cloudadj.select("cloudadj").eq(0); 
+
+  var aerosol = getQABits(i.select("state_1km"), 6,7,"aerosol");
+  aerosol = aerosol.select("aerosol").lte(1); 
+
+  var cirrus = getQABits(i.select("state_1km"), 8,9,"cirrus")
+                           .select("cirrus").lte(0); 
+  var icloud = getQABits(i.select("state_1km"), 10, 10,"icloud")
+                           .select("icloud").lte(0); 
+  
+  var i_out = i.unmask()
+              // .updateMask(good)
+              // .updateMask(qa_b3)
+              .updateMask(qa_b1) // keep
+              // .updateMask(qa_b4) // keep
+              .updateMask(cloud) // keep
+              .updateMask(shadow) // keep
+              // .updateMask(brdf) // ?
+              .updateMask(cloudadj) // ?
+              .updateMask(cirrus) // helps a bit?
+              .updateMask(icloud) // keep
+              // .updateMask(aerosol) // not helpful
+  return(i_out); 
+}
+
+
+// assemble list of dates
+var year_start = ee.Date(date_start).get("year")
+var year_end = ee.Date(date_end).get("year")
+var years = ee.List.sequence(year_start,year_end,1)
+var ydays = ee.List.sequence(1,365,1)
+
+var dates = years.map(function(y){
+  var out1 = ydays.map(function(d){
+    var out2 = ee.Date.parse("Y, D",
+        ee.String(ee.Number(y).toInt()).cat(", ").cat(ee.Number(d).toInt()))
+    return(out2)
+  })
+  return(out1)
+}).flatten().sort()
+dates = dates.filter(ee.Filter.greaterThanOrEquals('item',ee.Date(date_start)))
+dates = dates.filter(ee.Filter.lessThanOrEquals('item',ee.Date(date_end)))
+print(dates)
+
+var tmp = dates.map(function(d){
+  var d1 = ee.Date(d); 
+  var d2 = d1.advance(1, 'day')
+  var red_mod = mod.filterDate(d1,d2).map(qa_mod09ga)
+                   .select("sur_refl_b01").first().multiply(0.0001).rename("red_mod")
+  var red_myd = myd.filterDate(d1,d2).map(qa_mod09ga)
+                   .select("sur_refl_b01").first().multiply(0.0001).rename("red_myd")
+  
+  var out = red_mod.addBands(red_myd)
+                   .set("system:time_start",d1.millis())
+                   .set("system:time_end",d2.millis())
+
+ return(out)
+}).flatten()
+tmp = ee.ImageCollection.fromImages(tmp)
+// print(tmp)
+
+Map.addLayer(tmp,{},'compare',false)

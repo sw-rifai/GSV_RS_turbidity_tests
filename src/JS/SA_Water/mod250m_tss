@@ -1,0 +1,293 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var myd09gq = ee.ImageCollection("MODIS/061/MYD09GQ"),
+    myd09ga = ee.ImageCollection("MODIS/061/MYD09GA");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var date_start = "2022-01-09";
+var date_end = "2023-01-14";
+
+var mod44w = ee.ImageCollection("MODIS/006/MOD44W")
+
+var getQABits = function(image, start, end, newName) { 
+    // Compute the bits we need to extract.
+    var pattern = 0;
+    for (var i = start; i <= end; i++) {
+       pattern += Math.pow(2, i);
+    }
+    var out = image.select([0], [newName])
+                  .bitwiseAnd(pattern)
+                  .rightShift(start);
+    return(image.addBands(out))
+};
+
+
+function qa_mod09gq(i){ 
+
+  // Cloud and shadow mask generation -------------------------
+  var cloud = getQABits(i.select("state_1km"), 0,1,"cloud"); // state_1km is the band from QA assessment product. "cloud" is the new 'band'? created from bits 0 and 1
+  var cloud_mask = cloud.select("cloud").eq(0); // inverted
+
+  var shadow = getQABits(i.select("state_1km"), 2,2,"shadow");
+  var shadow_mask = shadow.select("shadow").eq(0); 
+
+  var brdf = getQABits(i.select("state_1km"), 14,14,"brdf");
+  var brdf_mask = brdf.select("brdf").eq(0); 
+
+  var cloudadj = getQABits(i.select("state_1km"), 13,13,"cloudadj");
+  var cloudadj_mask = cloudadj.select("cloudadj").eq(0); 
+
+  var aerosol = getQABits(i.select("state_1km"), 6,7,"aerosol");
+  var aerosol_mask = aerosol.select("aerosol").lte(2); 
+
+  var cirrus_mask = getQABits(i.select("state_1km"), 8,9,"cirrus")
+                           .select("cirrus").lte(0); 
+  var icloud_mask = getQABits(i.select("state_1km"), 10, 10,"icloud")
+                           .select("icloud").lte(0); 
+
+  // Surface reflectance quality mask generation ----------------------
+  var qa = i.select('QC_250m') //selects the QC_500m band from the mod09ga product
+  
+  // --- overall SR quality  
+  var vi_qual = getQABits(qa, 0,1,"vi_qual").select("vi_qual"); //extracts bits 0 and 1 and stores them in a new band called "VI"
+  var vi_qual_mask = vi_qual.lte(0); //values in VI band less than or equal to 2 are adequate
+
+  // --- specific red band quality
+  var qa_b1 = getQABits(qa, 4,7,"qa_b1"); //new band qa_b1 (band 1)
+  var qa_b1_mask = qa_b1.select("qa_b1").eq(0); // If bits in the 2-5 range are equal to 0, they are considered 'good' or "highest quality" according to the QA product
+
+  // --- specific nir band quality 
+  var qa_b2 = getQABits(qa, 8,11,"qa_b2");
+  var qa_b2_mask = qa_b2.select("qa_b2").eq(0); 
+
+  var nir_threshold_mask = i.select("sur_refl_b02")
+                             .multiply(0.0001)
+                             .lte(0.04);
+                             
+  var rat_b1_b2 = i.select("sur_refl_b02").subtract(i.select("sur_refl_b01"))
+                  .divide(i.select("sur_refl_b01"))
+                  .rename("rat_b1_b2")
+                  
+  var rat_mask = rat_b1_b2.lte(0.75)
+                  .and(i.select("sur_refl_b01").multiply(0.0001).lte(0.05))
+                  .rename('rat_mask')
+
+  var i_out = i.unmask()
+              // .updateMask(vi_qual_mask) // too much
+              .updateMask(qa_b1_mask) // keep
+              // .updateMask(qa_b2_mask) // too much
+              .updateMask(cloud_mask)
+              .updateMask(shadow_mask)
+              .updateMask(brdf_mask)
+              .updateMask(cirrus_mask)
+              .updateMask(icloud_mask)
+              .updateMask(aerosol_mask) // pretty aggressive, ok at 2
+              // .updateMask(nir_threshold_mask)
+              // .addBands(rat_mask)
+              .updateMask(rat_mask)
+  return(i_out); 
+}
+
+var scale_bands = function(image){
+  var optical = image.select(["sur_refl_b01","sur_refl_b02"])
+                     .multiply(0.0001)
+                     .rename(['b1','b2'])
+  var out = image.addBands(optical)
+  return(out)
+}
+
+var fn_tss = function(image) {
+  // Description: Calculate Total Suspended Solids (TSS)
+  // Reference: Chen et al., 2015 ISPRS JPRS, 
+  // "Estimating wide range Total Suspended Solids concentrations 
+  //  from MODIS 250-m imageries: An improved method"
+  //           https://doi.org/10.1016/j.isprsjprs.2014.10.006
+  // Input: image with 
+  // Notes: https://www.sciencedirect.com/science/article/pii/S0924271614002561
+  
+    var rat = image.select('b1').log()
+                     .divide(image.select("b2").log())
+                     .rename("rat")
+  
+    var tss = image.expression(
+        '(b1 < 0.025 ) ? (-b + (b**2 - 4*a*(c-y))**0.5)/(2*a)' + 
+        ': (-b - (b**2 - 4*a*(c-y))**0.5)/(2*a)', {
+            'b1': image.select('b1'),
+            'y': rat, //
+            'a': -0.334, // sensor specific calib param 
+            'b': 1.0046, //sensor specific calib param  
+            'c': 0.8251, //sensor specific calib param  
+            'scale_factor': 1//0.0001 //band info
+        }).exp().rename('tss_mod');
+        
+    
+    var tss_rat = image.select("b2").abs().divide(image.select('b1'))
+    tss_rat = tss_rat.multiply(746.18)
+                       .rename("tss_rat")
+    
+        return(image.addBands(tss).addBands(rat).addBands(tss_rat));
+    };
+
+var fn_dogliotti = function(image) {
+  // Description: Calculate turbidity estimate in Formazin Nephelometric Unit (FNU)
+  // Reference: Dogliotti et al 2015, Remote Sensing of Environment
+  // Input: image with red and SWIR1 bands in reflectane units
+  // Notes: See ACOLITE for most recent parameter calibrations
+  
+    var turbidity = image.expression(
+        '(A_t * (p_w * scale_factor) / (1 - ((p_w * scale_factor )/ C)))', {
+            'p_w': image.select('sur_refl_b01'), //red band mid wv_len = 645.5nm
+            'A_t': 378.46, //calib param (ACOLITE)
+            'B_t': 0.33, //calib param (ACOLITE)
+            'C': 0.19905, //calib param (ACOLITE)
+            'pi': Math.PI,
+            'scale_factor': 0.0001 //band info
+        }).rename('td');
+        
+
+        return(image.addBands(turbidity));
+    };
+
+
+
+var mask_water = function(i){
+  var water_mask = mod44w.first().select('water_mask').eq(1);
+  var out = i.updateMask(water_mask); 
+  return(out)
+}
+
+var smooth_td = function(i){
+  var kernel_radius = 5; 
+  // Define a square, uniform kernel.
+    var uniformKernel = ee.Kernel.square({
+        radius: kernel_radius,
+        units: 'pixels',
+    });
+
+  var td_s = i.select("td")
+             .reduceNeighborhood({
+                reducer: ee.Reducer.min(),
+                kernel: uniformKernel
+            }).rename("td_smoothed")
+             .reproject('EPSG:4326', null, 250);
+
+  var out = i.addBands(td_s); 
+  return(out); 
+}
+
+// ====================================================================
+// MAIN ===============================================================
+// ====================================================================
+
+
+// JOINS //////////////////////////////////////////////////////
+// Define an inner join.
+var ic = myd09ga.filter(ee.Filter.date(date_start,date_end))
+var ic_qa = myd09gq.filter(ee.Filter.date(date_start,date_end))
+
+var innerJoin = ee.Join.inner();
+
+// Specify an equals filter for image timestamps.
+var filterTimeEq = ee.Filter.equals({
+  leftField: 'system:time_start',
+  rightField: 'system:time_start'
+});
+
+// Apply the join.
+var innerJoinedMODIS = innerJoin.apply(ic, ic_qa, filterTimeEq);
+// Map a function to merge the results in the output FeatureCollection.
+var joinedMODIS = innerJoinedMODIS.map(function(feature) {
+  return ee.Image.cat(feature.get('primary'), feature.get('secondary'));
+});
+
+var ss = ee.ImageCollection(joinedMODIS)
+// Print the result of merging.
+print('Inner join, merged bands:', joinedMODIS);
+
+
+
+
+
+ss = ss.filter(ee.Filter.date(date_start,date_end))
+                .map(mask_water)
+                .map(qa_mod09gq)
+                .map(scale_bands)
+                .map(fn_tss)
+                .map(fn_dogliotti)
+                .map(smooth_td)
+                .first()
+
+
+var viridis_pal = ["#440154FF", "#482878FF", "#3E4A89FF", "#31688EFF", "#26828EFF", 
+"#1F9E89FF", "#35B779FF", "#6DCD59FF", "#B4DE2CFF", "#FDE725FF"]
+
+Map.addLayer(ss.select('rat'), 
+{ bands:"rat",
+  min:0,
+  max:1,
+  palette:viridis_pal
+}, 'log(b1)/log(b2)', false)
+
+Map.addLayer(ss.select("tss_mod"), 
+{ bands:"tss_mod",
+  min:0,
+  max:25,
+  palette:viridis_pal
+  // palette:['blue','black','red']
+}, 'tss_mod', false)
+
+Map.addLayer(ss.select("tss_rat"), 
+{ bands:"tss_rat",
+  min:0,
+  max:500,
+  palette:viridis_pal
+  // palette:['blue','black','red']
+}, 'tss_rat', false)
+
+Map.addLayer(ss.select('b1'),
+{ bands:['b1'],
+  min:0,
+  max:0.05,
+  palette:viridis_pal
+}, 'b1', false)
+
+Map.addLayer(ss.select('b2'),
+{ bands:['b2'],
+  min:0,
+  max:0.025,
+  palette:viridis_pal
+}, 'b2', false)
+
+
+// Map.addLayer(ss.select('rat_b1_b2'),
+// { bands:['rat_b1_b2'],
+//   min:-1,
+//   max:0,
+//   palette:viridis_pal
+// }, 'rat_b1_b2', true)
+
+// Map.addLayer(ss,
+// { bands:['rat_mask'],
+//   min:0,
+//   max:1,
+//   palette:viridis_pal
+// }, 'rat_mask', false)
+
+
+Map.addLayer(ss,{
+  bands:['sur_refl_b01','sur_refl_b04','sur_refl_b03'],
+  min:0,
+  max:1000
+},'rgb',false)
+
+Map.addLayer(ss.select('td'),
+{ bands:['td'],
+  min:0,
+  max:1.5,
+  palette:viridis_pal
+}, 'dogliotti turbidity', false)
+
+Map.addLayer(ss.select('td_smoothed'),
+{ bands:['td_smoothed'],
+  min:0,
+  max:1.5,
+  palette:viridis_pal
+}, 'dogliotti turbidity smoothed', false)

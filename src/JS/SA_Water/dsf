@@ -1,0 +1,36 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA"),
+    roi = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([138.47313103900558, -34.91244484292985]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// https://www.sciencedirect.com/science/article/pii/S0034425719301014
+// turbidity coefficients: https://ars.els-cdn.com/content/image/1-s2.0-S0034425719301014-mmc1.pdf
+
+var rename_bands = function(i){
+  var optical = i.select(['B1','B2','B3','B4','B5','B6','B7'])
+                 .rename("uv-blue",'blue','green','red','nir','swir1','swir2')
+  var out = i.addBands(optical);
+  return(out)
+}
+
+var dsf = function(i){
+  var eps = i.select("swir1").divide(i.select("swir2"))
+  var delta_i = i.expression("(swir2 - lambda)/(swir2 - swir1)",
+  {
+    swir1:i.select("swir1"),
+    swir2:i.select("swir2"),
+    lambda:i.select('blue')
+  })
+  
+  var eps_i = eps.pow(delta_i)
+  
+  var  = i.expression("(1/tray_i)*(prc_i - (eps_i*swir2))")
+}
+
+var ss = l8.filter(ee.Filter.date("2016-10-05","2016-10-06"))
+           .filterBounds(roi)
+print(ss)
+
+Map.addLayer(ss.first(),{min:0,max:0.2,bands:['B4','B3','B2']})
