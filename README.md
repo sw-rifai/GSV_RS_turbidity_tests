@@ -1,14 +1,6 @@
----
-editor_options: 
-  markdown: 
-    wrap: 80
----
-
 Adding and source code and data files - work in progress.
 
-Directory structure:
-
-# Project tree
+# Directory tree
 
 .
  * [src](./src)
